@@ -8,6 +8,7 @@ namespace Domain
         public string Name { get; set; }
         public string Phone { get; set; }
         public string? UserName { get; set; }
+        public List<Booking> bookings { get; set; } = new();
         public URole Role { get; init; }
         public User(long id, string name, string phone, string? userName, URole role)
         {

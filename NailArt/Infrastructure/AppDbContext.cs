@@ -1,5 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Domain;
+﻿using Domain;
+using Microsoft.EntityFrameworkCore;
+using System.Net.NetworkInformation;
+using BookingStatus = Domain.Enums.BookingStatus;
 namespace Infrastructure
 {
     public class AppDbContext : DbContext
@@ -17,6 +19,10 @@ namespace Infrastructure
             builder.Entity<Booking>()
                .HasOne(b => b.Service)
                .WithMany(s => s.bookings);
+
+            builder.Entity<Booking>()
+                .HasQueryFilter(x => x.Status == BookingStatus.Completed 
+                || x.Status == BookingStatus.Booked);
         }
     }
 }

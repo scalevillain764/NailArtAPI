@@ -12,9 +12,11 @@ namespace Application.Bookings.DTO
     {
         public BookingResponseByUser(Booking booking) : this(
             booking.Id, 
-            booking.Service.Name,
-            booking.Service.ShortDescription,
+            booking.Service?.Name,
+            booking.Service?.ShortDescription,
             booking.Service.Price,
-            booking)
+            booking.Date,
+            booking.Status.ToString())
+        { }
     }
 }

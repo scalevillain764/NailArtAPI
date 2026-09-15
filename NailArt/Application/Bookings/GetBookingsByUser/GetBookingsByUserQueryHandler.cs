@@ -22,11 +22,14 @@ namespace Application.Bookings
 
             var rez = await _context.bookings
                 .Where(x => x.UserId == query.UserId)
+                .Include(x => x.Service)
+                .Select(x => new BookingResponseByUser(x))
                 .ToListAsync(token);
 
             int totalCount = rez.Count();
 
-            return Result<PagedResponse<BookingResponseByUser>>.Success(new PagedResponse(rez, query.Page, query.PageSize, totalCount));
+            return Result<PagedResponse<BookingResponseByUser>>
+                .Success(new PagedResponse<BookingResponseByUser>(rez, query.Page, query.PageSize, totalCount));
         }
     }
 }

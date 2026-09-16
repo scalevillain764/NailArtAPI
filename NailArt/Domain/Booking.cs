@@ -20,7 +20,7 @@ namespace Domain
             UserId = userId;
             ServiceId = serviceId;
             Date = date;
-            Status = BStatus.Booked;
+            Status = BStatus.Pending;
         }
     }
 }

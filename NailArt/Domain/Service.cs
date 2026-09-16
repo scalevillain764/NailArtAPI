@@ -5,17 +5,15 @@
         public Ulid Id { get; init; }
         public string Name { get; set; }
         public string? ShortDescription { get; set; }
-        public int DurationHours { get; set; }
         public int DurationMinutes { get; set; }
         public decimal Price { get; set; }
         public List<Booking> bookings { get; set; } = new();
         public bool IsDeleted { get; set; }
-        public Service(string name, string? shortDescription, int durationHours, int durationMinutes, decimal price)
+        public Service(string name, string? shortDescription, int durationMinutes, decimal price)
         {
             Id = Ulid.NewUlid();
             Name = name;
             ShortDescription = shortDescription;
-            DurationHours = durationHours;
             DurationMinutes = durationMinutes;
             Price = price;
             IsDeleted = false;

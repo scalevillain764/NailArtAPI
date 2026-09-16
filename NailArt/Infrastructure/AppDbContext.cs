@@ -22,7 +22,7 @@ namespace Infrastructure
 
             builder.Entity<Booking>()
                 .HasQueryFilter(x => x.Status == BookingStatus.Completed 
-                || x.Status == BookingStatus.Booked);
+                || x.Status == BookingStatus.Pending);
         }
     }
 }

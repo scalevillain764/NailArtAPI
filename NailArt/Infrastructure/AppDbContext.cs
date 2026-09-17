@@ -8,7 +8,7 @@ namespace Infrastructure
     {
         public DbSet<Booking> bookings { get; set; }
         public DbSet<User> users { get; set; }
-        public DbSet<Service> services { get; set; }
+        public DbSet<NailService> services { get; set; }
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
         protected override void OnModelCreating(ModelBuilder builder)
         {

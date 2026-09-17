@@ -9,7 +9,7 @@ namespace Domain
         public User? User { get; set; } = null!;
 
         public Ulid ServiceId { get; init; }
-        public Service? Service { get; set; } = null!;
+        public NailService? Service { get; set; } = null!;
 
         public DateTime Date { get; init; }
         public BStatus Status { get; set; }

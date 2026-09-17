@@ -14,7 +14,7 @@ namespace Application.NailServices
             _context = context;
         }
         public async Task<Result<NailServiceResponse>> Handle(CreateNailServiceCommand command, CancellationToken token)
-        {
+        {     
             var newNailService = new NailService(command.Name, command.ShortDescription, command.DurationMinutes, command.Price);
 
             _context.Add(newNailService);

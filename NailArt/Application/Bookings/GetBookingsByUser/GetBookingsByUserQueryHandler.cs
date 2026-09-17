@@ -20,13 +20,17 @@ namespace Application.Bookings
             if (query.Page < 1 || query.PageSize < 1)
                 return Result<PagedResponse<BookingResponseByUser>>.Fail("Ошибка страницы", Error.Validation);
 
-            var rez = await _context.bookings
+            var q = _context.bookings
                 .Where(x => x.UserId == query.UserId)
-                .Include(x => x.Service)
-                .Select(x => new BookingResponseByUser(x))
-                .ToListAsync(token);
+                .Include(x => x.Service);
 
-            int totalCount = rez.Count();
+            int totalCount = await q.CountAsync(token);
+
+            var rez = await _context.bookings
+                .Select(x => new BookingResponseByUser(x))
+                .Skip((query.Page - 1) * query.PageSize)
+                .Take(query.PageSize)
+                .ToListAsync(token);
 
             return Result<PagedResponse<BookingResponseByUser>>
                 .Success(new PagedResponse<BookingResponseByUser>(rez, query.Page, query.PageSize, totalCount));

@@ -1,6 +1,6 @@
 ﻿namespace Domain
 {
-    public class Service
+    public class NailService
     {
         public Ulid Id { get; init; }
         public string Name { get; set; }
@@ -9,7 +9,7 @@
         public decimal Price { get; set; }
         public List<Booking> bookings { get; set; } = new();
         public bool IsDeleted { get; set; }
-        public Service(string name, string? shortDescription, int durationMinutes, decimal price)
+        public NailService(string name, string? shortDescription, int durationMinutes, decimal price)
         {
             Id = Ulid.NewUlid();
             Name = name;

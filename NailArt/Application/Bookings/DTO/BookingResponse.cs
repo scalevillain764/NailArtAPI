@@ -11,7 +11,8 @@ namespace Application.Bookings.DTO
         decimal Price,
         string UserName,
         string UserPhone,
-        DateTime Date
+        DateTime Date,
+        string Status
         )
     {
         public BookingResponse(Booking booking) :
@@ -24,7 +25,8 @@ namespace Application.Bookings.DTO
             booking.Service.Price,
             booking.User?.Name,
             booking.User?.Phone,
-            booking.Date)
+            booking.Date,
+            booking.Status.ToString())
         { }
     }
 }

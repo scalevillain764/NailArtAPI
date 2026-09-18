@@ -17,6 +17,7 @@ namespace Application.Bookings
         public async Task<Result<string>> Handle(CancelBookingCommand command, CancellationToken token)
         {
             var last_booking = await _context.bookings
+                .Where(x => x.Status == Status.Pending)
                 .FirstOrDefaultAsync(x => x.UserId == command.userId, token);
 
             if (last_booking == null)

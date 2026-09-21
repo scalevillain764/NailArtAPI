@@ -14,9 +14,11 @@ namespace TelegramBot.BotHandlers
     public class CallbackQueryHandler : IBotHandler
     {
         private readonly IDatabase _redis;
-        public CallbackQueryHandler(IConnectionMultiplexer connectionMultiplexer)
+        private readonly IMediator _mediator;
+        public CallbackQueryHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator)
         {
             _redis = connectionMultiplexer.GetDatabase();
+            _mediator = mediator;
         }
         public bool CanHandle(Update update) => update.CallbackQuery is not null;
         public async Task HandleAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -34,58 +36,130 @@ namespace TelegramBot.BotHandlers
             {
                 case "contact:add":
                     {
-                        var cachedDraft = await _redis.StringGetAsync($"contact:{userId}");
-                        ShareContactDraft? draft = null;
-                        if(!cachedDraft.IsNullOrEmpty)
-                        {
-                            draft = JsonSerializer.Deserialize<ShareContactDraft>((string)cachedDraft!);
+                        bool userExists = await _mediator.Send(
+                            new CheckClientByIdQuery(userId),
+                            cancellationToken);
 
-                            if (draft == null)
+                        if (userExists)
+                        {
+                            await botClient.SendMessage(
+                                chatId,
+                                "Ваш контакт уже есть в нашей базе данных");
+
+                            return;
+                        }
+
+                        var results = await Task.WhenAll(
+                            _redis.StringGetAsync($"contact:process:{userId}"),
+                            _redis.StringGetAsync($"contact:draft:{userId}")
+                        );
+
+                        var cachedProcess = results[0];
+                        var cachedDraft = results[1];
+
+                        if (!cachedProcess.IsNullOrEmpty) // незаконченное создание
+                        {
+                            var process = JsonSerializer.Deserialize<ContactProcess>(
+                                (string)cachedProcess!);
+
+                            if (process == null)
                                 return;
 
-                            string print = draft.State switch
+                            string text = process.State switch
                             {
-                                ContactState.CreateEnterName => "имя",
-                                ContactStateMachine.CreateEnterPhone => "номер телефона",
-                                _ => throw new KeyNotFoundException("Что-то пошло не так")
+                                ContactState.EnterName => "имя",
+                                ContactState.EnterPhone => "номер телефона",
+                                _ => throw new KeyNotFoundException("Неизвестное состояние")
                             };
 
-                            await botClient.SendMessage(chatId, 
-                                $"Похоже в прошлый раз вы не закончили создание контакта. Пожалуйста, введите {print}");
+                            await botClient.SendMessage(
+                                chatId,
+                                $"Похоже, в прошлый раз вы не закончили создание контакта. Пожалуйста, введите {text}");
+
+                            return;
                         }
-                        else
+
+                        // Процесса нет → начинаем создание
+                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser);
+
+                        var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
+
+                        await Task.WhenAll(
+                            _redis.StringSetAsync(
+                                $"contact:process:{userId}",
+                                JsonSerializer.Serialize(newProcess)),
+
+                            _redis.StringSetAsync(
+                                $"contact:draft:{userId}",
+                                JsonSerializer.Serialize(newDraft))
+                        );
+
+                        await botClient.SendMessage(
+                            chatId,
+                            "Пожалуйста, введите имя");
+
+                        break;
+                    }
+                case "contact:edit_name":
+                    {
+                        bool userExists = await _mediator.Send(new CheckClientByIdQuery(userId), cancellationToken);
+
+                        if(!userExists)
                         {
-                            draft = new ShareContactDraft(userId, null, null, null, 
-                                ContactStateMachine.CreateEnterName, BotFlow.CreateUser);
-
-                            await botClient.SendMessage(chatId,
-                                $"Пожалуйста, введите имя");
+                            await botClient.SendMessage(chatId, $"Сначала создайте контакт");
+                            return;
                         }
 
-                        var serializedDraft = JsonSerializer.Serialize(draft);
+                        var newEditDraft = new ContactProcess(ContactState.EnterName, BotFlow.EditUser);     
+                        
+                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
                         await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
                         break;
                     }
-                case "contact:edit_name"
-                {
-                        var cachedDraft = await _redis.StringGetAsync($"contact:{userId}");
-                        ShareContactDraft? draft = null;
+                case "contact:edit_phone":
+                    {
+                        bool userExists = await _mediator.Send(new CheckClientByIdQuery(userId), cancellationToken);
 
-                        if (!cachedDraft.IsNullOrEmpty)
+                        if (!userExists)
                         {
-                            draft = JsonSerializer.Deserialize<ShareContactDraft>((string)cachedDraft!);
-
-                            if (draft == null)
-                                return;
-                       
-                            await botClient.SendMessage(chatId,
-                                $"Введите новое имя");
-                        }
-                        else
                             await botClient.SendMessage(chatId, $"Сначала создайте контакт");
+                            return;
+                        }
 
-                        draft.Flow = BotFlow.EditUser;
-                        draft.State = EditContactStateMachine.EnterName;
+                        var newEditDraft = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser);
+
+                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
+                        await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
+                        break;
+                    }
+                case "contact:remove_userName":
+                    {
+                        var rez = await _mediator.Send(new EditClientUserNameCommand(userId, null), cancellationToken);
+
+                        if(!rez.IsSuccess)
+                        {
+                            await botClient.SendMessage(chatId, $"{rez.ErrorMessage!}");
+                            return;
+                        }
+
+                        await _redis.KeyDeleteAsync($"contact:{userId}");
+                        break;            
+                    }
+                case "contact:edit_userName":
+                    {
+                        bool userExists = await _mediator.Send(new CheckClientByIdQuery(userId), cancellationToken);
+
+                        if (!userExists)
+                        {
+                            await botClient.SendMessage(chatId, $"Сначала создайте контакт");
+                            return;
+                        }
+
+                        var newEditDraft = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser);
+
+                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
+                        await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
+                        break;
                     }
             }
         }

@@ -54,7 +54,7 @@ namespace TelegramBot.BotHandlers
 
                         var results = await Task.WhenAll(
                             _redis.StringGetAsync($"contact:process:{userId}"),
-                            _redis.StringGetAsync($"contact:draft:{userId}")
+                            _redis.StringGetAsync($"contact:creation_draft:{userId}")
                         );
 
                         var cachedProcess = results[0];
@@ -82,8 +82,7 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser);
-
+                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser, null);
                         var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
 
                         await Task.WhenAll(
@@ -92,7 +91,7 @@ namespace TelegramBot.BotHandlers
                                 JsonSerializer.Serialize(newProcess)),
 
                             _redis.StringSetAsync(
-                                $"contact:draft:{userId}",
+                                $"contact:creation_draft:{userId}",
                                 JsonSerializer.Serialize(newDraft))
                         );
 
@@ -112,10 +111,18 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newEditDraft = new ContactProcess(ContactState.EnterName, BotFlow.EditUser);     
-                        
-                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
-                        await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
+                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditType.Name);
+                        var newEditDraft = new EditContactDraft(null, null, null);
+
+                        var serializedProcess = JsonSerializer.Serialize(newProcess);
+                        var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
+
+                        await Task.WhenAll([
+                            _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),
+                            _redis.StringSetAsync($"contact:edit_draft:{userId}", serializedEditDraft),
+                            botClient.SendMessage(chatId, "Введите имя")
+                        ]);
+
                         break;
                     }
                 case "contact:edit_phone":
@@ -128,10 +135,18 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newEditDraft = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser);
+                        var newProcess = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser, EditType.Phone);
+                        var newEditDraft = new EditContactDraft(null, null, null);
 
-                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
-                        await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
+                        var serializedProcess = JsonSerializer.Serialize(newProcess);
+                        var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
+
+                        await Task.WhenAll([
+                            _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),
+                            _redis.StringSetAsync($"contact:edit_draft:{userId}", serializedEditDraft),
+                            botClient.SendMessage(chatId, "Введите номер телефона")
+                        ]);
+
                         break;
                     }
                 case "contact:remove_userName":
@@ -140,11 +155,11 @@ namespace TelegramBot.BotHandlers
 
                         if(!rez.IsSuccess)
                         {
-                            await botClient.SendMessage(chatId, $"{rez.ErrorMessage!}");
+                            await botClient.SendMessage(chatId, rez.ErrorMessage!);
                             return;
                         }
 
-                        await _redis.KeyDeleteAsync($"contact:{userId}");
+                        await _redis.KeyDeleteAsync($"contact:process:{userId}");
                         break;            
                     }
                 case "contact:edit_userName":
@@ -157,12 +172,20 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newEditDraft = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser);
+                        var newProcess = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser, EditType.UserName);
+                        var newEditDraft = new EditContactDraft(null, null, null);
 
-                        var serializedDraft = JsonSerializer.Serialize(newEditDraft);
-                        await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
+                        var serializedProcess = JsonSerializer.Serialize(newProcess);
+                        var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
+
+                        await Task.WhenAll([
+                            _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),
+                            _redis.StringSetAsync($"contact:edit_draft:{userId}", serializedEditDraft),
+                            botClient.SendMessage(chatId, "Введите юзер нейм")
+                        ]);
+
                         break;
-                    }
+                    }         
                 case "confirm":
                     {
                         var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
@@ -179,12 +202,73 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var handler = _handlers.FirstOrDefault(x => x.CanConfirm(process.Flow));
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(process.Flow));
+                        if(handler == null)
+                        {
+                            await botClient.SendMessage(chatId, "Что-то пошло не так");
+                            return;
+                        }
 
-                        await handler.ConfirmAsync(userId, (long)chatId, process.State, botClient, cancellationToken);
+                        await handler.ConfirmAsync(userId, (long)chatId, process, botClient, cancellationToken);
 
                         break;                  
                     }
+                case "contact:create:edit_name":
+                    {
+                        var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
+                        if (cachedProcess.IsNullOrEmpty)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        var process = JsonSerializer.Deserialize<ContactProcess>((string)cachedProcess!);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        process.EditType = EditType.Name;
+                        process.State = ContactState.EnterName;
+
+                        var serializedProcess = JsonSerializer.Serialize(process);
+
+                        await Task.WhenAll([
+                              _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),
+                              botClient.SendMessage(chatId, "Введите новое имя")
+                            ]);
+
+                        break;                   
+                    }
+                case "contact:create:edit_phone":
+                    {
+                        var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
+                        if (cachedProcess.IsNullOrEmpty)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        var process = JsonSerializer.Deserialize<ContactProcess>((string)cachedProcess!);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        process.EditType = EditType.Phone;
+                        process.State = ContactState.EnterPhone;
+
+                        var serializedProcess = JsonSerializer.Serialize(process);
+
+                        await Task.WhenAll([
+                              _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),
+                              botClient.SendMessage(chatId, "Введите новый номер телефона")
+                            ]);
+
+                        break;
+                    }          
             }
         }
     }

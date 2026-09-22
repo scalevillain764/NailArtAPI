@@ -1,12 +1,15 @@
 ﻿using Application.Clients;
+using Application.Clients.DTO;
 using MediatR;
 using StackExchange.Redis;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
 using TelegramBot.DTO;
 using TelegramBot.Interfaces;
+using Infrastructure.Responses;
 using TelegramBot.StateMachines;
 namespace TelegramBot.BotHandlers
 {
@@ -19,26 +22,35 @@ namespace TelegramBot.BotHandlers
             _redis = connectionMultiplexer.GetDatabase();
             _mediator = mediator;
         }
-        public bool CanHandle(BotFlow flow) => flow == BotFlow.EditUser;
-        public async Task HandleAsync(long userId, string message, ContactProcess process, CancellationToken token)
+        public bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.EditUser;
+        public async Task HandleAsync(long userId, Message message, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
-            var cachedDraft = await _redis.StringGetAsync(
-                    $"contact:draft:{userId}");
-
-            if (cachedDraft.IsNullOrEmpty)
+            var userExists = await _mediator.Send(new CheckClientByIdQuery(userId), token);
+            if(!userExists)
+            {
+                await botClient.SendMessage(message.Chat.Id, "Такого пользователя не существует");
                 return;
+            }
 
-            var draft = JsonSerializer.Deserialize<ShareContactDraft>(
-                (string)cachedDraft!);
+            var serializedDraft = await _redis.StringGetAsync($"contact:edit_draft:{userId}");
+            if(serializedDraft.IsNullOrEmpty)
+            {
+                await botClient.SendMessage(message.Chat.Id, "Что-то пошло не так");
+                return;
+            }
 
+            var draft = JsonSerializer.Deserialize<EditContactDraft>((string)serializedDraft!);
             if (draft == null)
+            {
+                await botClient.SendMessage(message.Chat.Id, "Что-то пошло не так");
                 return;
+            }
 
             switch (process.State)
             {
                 case ContactState.EnterName:
                     {
-                        draft.Name = message;
+                        draft.Name = message.Text;
                         process.State = ContactState.WaitingConfirmationUser;
 
                         await Task.WhenAll([
@@ -47,7 +59,7 @@ namespace TelegramBot.BotHandlers
                             JsonSerializer.Serialize(process)),
 
                             _redis.StringSetAsync(
-                            $"contact:draft:{userId}",
+                            $"contact:edit_draft:{userId}",
                             JsonSerializer.Serialize(draft))
                             ]);
 
@@ -55,24 +67,7 @@ namespace TelegramBot.BotHandlers
                     }
                 case ContactState.EnterPhone:
                     {
-                        draft.Phone = message;
-                        process.State = ContactState.EnterUserName;
-
-                        await Task.WhenAll([
-                            _redis.StringSetAsync(
-                            $"contact:process:{userId}",
-                            JsonSerializer.Serialize(process)),
-
-                            _redis.StringSetAsync(
-                            $"contact:draft:{userId}",
-                            JsonSerializer.Serialize(draft))
-                            ]);
-
-                        break;
-                    }
-                case ContactState.EnterUserName:
-                    {
-                        draft.UserName = message;
+                        draft.Phone = message.Text;
                         process.State = ContactState.WaitingConfirmationUser;
 
                         await Task.WhenAll([
@@ -81,53 +76,94 @@ namespace TelegramBot.BotHandlers
                             JsonSerializer.Serialize(process)),
 
                             _redis.StringSetAsync(
-                            $"contact:draft:{userId}",
+                            $"contact:edit_draft:{userId}",
                             JsonSerializer.Serialize(draft))
                             ]);
 
                         break;
                     }
+                case ContactState.EnterUserName:
+                    {
+                        draft.UserName = message.Text;
+                        process.State = ContactState.WaitingConfirmationUser;
 
+                        await Task.WhenAll([
+                            _redis.StringSetAsync(
+                            $"contact:process:{userId}",
+                            JsonSerializer.Serialize(process)),
+
+                            _redis.StringSetAsync(
+                            $"contact:edit_draft:{userId}",
+                            JsonSerializer.Serialize(draft))
+                            ]);
+
+                        break;
+                    }
             }
         }
-        public bool CanConfirm(BotFlow flow) => flow == BotFlow.EditUser;
-
-        public async Task ConfirmAsync(long userId, long chatId, ITelegramBotClient botClient, CancellationToken token)
+        public async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
-            var cachedDraft = await _redis.StringGetAsync($"contact:draft:{userId}");
+            if (process.State != ContactState.WaitingConfirmationUser)
+            {
+                await botClient.SendMessage(chatId, "Сейчас подтверждение недоступно.");
+                return;
+            }
+
+            var cachedDraft = await _redis.StringGetAsync($"contact:edit_draft:{userId}");
             if (cachedDraft.IsNullOrEmpty)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
                 return;
             }
 
-            var deserializedDraft = JsonSerializer.Deserialize<ShareContactDraft>((string)cachedDraft!);
+            var deserializedDraft = JsonSerializer.Deserialize<EditContactDraft>((string)cachedDraft!);
             if (deserializedDraft == null)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
                 return;
             }
 
-            var result = await _mediator.Send(new CreateClientCommand(
-                            deserializedDraft.Id,
-                            deserializedDraft.Name!,
-                            deserializedDraft.Phone!,
-                            deserializedDraft.UserName), token);
-
-            if (!result.IsSuccess)
+            if(process.EditType == null)
             {
-                await botClient.SendMessage(
-                    chatId,
-                    result.ErrorMessage ?? "Не удалось создать контакт ❌");
+                await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
                 return;
             }
 
-            await _redis.KeyDeleteAsync($"contact:draft:{userId}");
+            Result<ClientResponse>? result = null;
+
+            switch(process.EditType)
+            {
+                case EditType.Name:
+                    {
+                        result = await _mediator.Send(new EditClientNameCommand(userId, deserializedDraft.Name), token);
+                        break;
+                    }
+                case EditType.Phone:
+                    {
+                        result = await _mediator.Send(new EditClientPhoneCommand(userId, deserializedDraft.Phone), token);
+                        break;
+                    }
+                case EditType.UserName:
+                    {
+                        result = await _mediator.Send(new EditClientUserNameCommand(userId, deserializedDraft.UserName), token);
+                        break;
+                    }
+            }
+
+            if (!result!.IsSuccess)
+            {
+                await botClient.SendMessage(
+                    chatId,
+                    result.ErrorMessage ?? "Не удалось сохранить изменения ❌");
+                return;
+            }
+
+            await _redis.KeyDeleteAsync($"contact:edit_draft:{userId}");
             await _redis.KeyDeleteAsync($"contact:process:{userId}");
 
             await botClient.SendMessage(
                 chatId,
-                "Ваш контакт успешно добавлен ✅");
+                "Ваш контакт успешно обновлен✅");
         }
     }
 }

@@ -47,7 +47,7 @@ namespace TelegramBot.BotHandlers
             {
                 case BotFlow.CreateUser:
                     {
-                        var handler = _handlers.FirstOrDefault(x => x.CanHandle(BotFlow.CreateUser));
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(BotFlow.CreateUser));
                         if (handler == null)
                         {
                             await botClient.SendMessage(chatId, $"Не удалось создать контакт ❌");

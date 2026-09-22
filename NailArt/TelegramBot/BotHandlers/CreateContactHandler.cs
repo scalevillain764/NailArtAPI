@@ -27,8 +27,7 @@ namespace TelegramBot.BotHandlers
             _mediator = mediator;
         }
 
-        public bool CanHandle(BotFlow flow) => flow == BotFlow.CreateUser;
-
+        public bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateUser;
         public async Task HandleAsync(
             long userId,
             Message message,
@@ -37,7 +36,7 @@ namespace TelegramBot.BotHandlers
             CancellationToken token
         )
         {
-            var cachedDraft = await _redis.StringGetAsync($"contact:draft:{userId}");
+            var cachedDraft = await _redis.StringGetAsync($"contact:creation_draft:{userId}");
 
             if (cachedDraft.IsNullOrEmpty)
                 return;
@@ -52,18 +51,30 @@ namespace TelegramBot.BotHandlers
                 case ContactState.EnterName:
                 {
                     draft.Name = message.Text;
-                    process.State = ContactState.EnterPhone;
+
+                    if (process.EditType != null && process.EditType == EditType.Name)
+                    {
+                        process.EditType = null; 
+                        process.State = ContactState.WaitingConfirmationUser;
+                        await botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
+                                 $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
+                                 $"Юзер нейм: {draft.UserName ?? "отсутствует"}");
+                    } 
+                    else
+                    {
+                        process.State = ContactState.EnterPhone;
+                        await botClient.SendMessage(message.Chat.Id, "Введите, пожалуйста, номер телефона");
+                    }                       
 
                     await Task.WhenAll([
-                        _redis.StringSetAsync(
-                            $"contact:process:{userId}",
-                            JsonSerializer.Serialize(process)
+                     _redis.StringSetAsync(
+                         $"contact:process:{userId}",
+                         JsonSerializer.Serialize(process)
                         ),
                         _redis.StringSetAsync(
-                            $"contact:draft:{userId}",
-                            JsonSerializer.Serialize(draft)
+                         $"contact:creation_draft:{userId}",
+                         JsonSerializer.Serialize(draft)
                         ),
-                        botClient.SendMessage(message.Chat.Id, "Введите, пожалуйста, номер телефона")
                     ]);
 
                     break;
@@ -71,6 +82,8 @@ namespace TelegramBot.BotHandlers
                 case ContactState.EnterPhone:
                 {
                     draft.Phone = message.Text;
+
+                    process.EditType = null;
                     process.State = ContactState.WaitingConfirmationUser;
 
                     await Task.WhenAll([
@@ -79,7 +92,7 @@ namespace TelegramBot.BotHandlers
                             JsonSerializer.Serialize(process)
                         ),
                         _redis.StringSetAsync(
-                            $"contact:draft:{userId}",
+                            $"contact:creation_draft:{userId}",
                             JsonSerializer.Serialize(draft)
                         ),
                         botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
@@ -92,16 +105,15 @@ namespace TelegramBot.BotHandlers
             }
         }
 
-        public bool CanConfirm(BotFlow flow) => flow == BotFlow.CreateUser;
-        public async Task ConfirmAsync(long userId, long chatId, ContactState state, ITelegramBotClient botClient, CancellationToken token)
+        public async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
-            if (state != ContactState.WaitingConfirmationUser)
+            if (process.State != ContactState.WaitingConfirmationUser)
             {
                 await botClient.SendMessage(chatId, "Сейчас подтверждение недоступно.");
                 return;
             }
 
-            var cachedDraft = await _redis.StringGetAsync($"contact:draft:{userId}");
+            var cachedDraft = await _redis.StringGetAsync($"contact:creation_draft:{userId}");
             if (cachedDraft.IsNullOrEmpty)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
@@ -129,7 +141,7 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            await _redis.KeyDeleteAsync($"contact:draft:{userId}");
+            await _redis.KeyDeleteAsync($"contact:creation_draft:{userId}");
             await _redis.KeyDeleteAsync($"contact:process:{userId}");
 
             await botClient.SendMessage(

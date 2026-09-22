@@ -6,5 +6,6 @@ namespace TelegramBot.StateMachines
     public enum ContactState {
         EnterName,
         EnterPhone, 
-        EnterUserName };
+        EnterUserName,
+        WaitingConfirmationUser};
 }

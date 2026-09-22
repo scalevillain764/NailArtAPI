@@ -9,16 +9,19 @@ using TelegramBot.DTO;
 using TelegramBot.StateMachines;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 using TelegramBot.BotFlows;
+using TelegramBot.Interfaces;
 namespace TelegramBot.BotHandlers
 {
     public class MessageHandler : IBotHandler
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
-        public MessageHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator)
+        private readonly IEnumerable<IOperationHandler> _handlers;
+        public MessageHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator, IEnumerable<IOperationHandler> handlers)
         {
             _redis = connectionMultiplexer.GetDatabase();
             _mediator = mediator;
+            _handlers = handlers;
         }
         public bool CanHandle(Update update) => update.Message is not null && update.Message.Text is not null;
         public async Task HandleAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -44,10 +47,20 @@ namespace TelegramBot.BotHandlers
             {
                 case BotFlow.CreateUser:
                     {
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandle(BotFlow.CreateUser));
+                        if (handler == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Не удалось создать контакт ❌");
+                            return;
+                        }
+                        await handler.HandleAsync((long)userId, update.Message!, deserializedProcess, botClient, cancellationToken);
+                        break;
+                    }
+                case BotFlow.EditUser:
+                    {
 
                     }
             }
-
         }
     }
 }

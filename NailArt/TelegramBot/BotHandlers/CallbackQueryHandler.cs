@@ -5,20 +5,23 @@ using System.Drawing;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using TelegramBot.BotFlows;
 using TelegramBot.DTO;
+using TelegramBot.Interfaces;
 using TelegramBot.StateMachines;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
-using TelegramBot.BotFlows;
 namespace TelegramBot.BotHandlers
 {
     public class CallbackQueryHandler : IBotHandler
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
-        public CallbackQueryHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator)
+        private readonly IEnumerable<IOperationHandler> _handlers;
+        public CallbackQueryHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator, IEnumerable<IOperationHandler> handlers)
         {
             _redis = connectionMultiplexer.GetDatabase();
             _mediator = mediator;
+            _handlers = handlers;
         }
         public bool CanHandle(Update update) => update.CallbackQuery is not null;
         public async Task HandleAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -79,7 +82,6 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        // Процесса нет → начинаем создание
                         var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser);
 
                         var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
@@ -160,6 +162,28 @@ namespace TelegramBot.BotHandlers
                         var serializedDraft = JsonSerializer.Serialize(newEditDraft);
                         await _redis.StringSetAsync($"contact:{userId}", serializedDraft);
                         break;
+                    }
+                case "confirm":
+                    {
+                        var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
+                        if(cachedProcess.IsNullOrEmpty)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        var process = JsonSerializer.Deserialize<ContactProcess>((string)cachedProcess!);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет");
+                            return;
+                        }
+
+                        var handler = _handlers.FirstOrDefault(x => x.CanConfirm(process.Flow));
+
+                        await handler.ConfirmAsync(userId, (long)chatId, process.State, botClient, cancellationToken);
+
+                        break;                  
                     }
             }
         }

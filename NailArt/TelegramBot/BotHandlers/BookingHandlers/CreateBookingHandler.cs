@@ -53,7 +53,7 @@ namespace TelegramBot.BotHandlers
 
             switch(process.State)
             {
-                case BookingState.EnterService:
+                case BookingState.SelectService:
                     {
                         if(process.MessageWithServicesId != null)
                         {
@@ -76,7 +76,17 @@ namespace TelegramBot.BotHandlers
                                             process.Pagination.CurrentPage--;
                                         }
                                         break;
-                                    }                             
+                                    }
+                            }
+
+                            if (Data.StartsWith("service:"))
+                            {
+                                var serviceIdString = Data["service:".Length..];
+
+                                if (!Ulid.TryParse(serviceIdString, out var serviceId))
+                                    return;
+
+                                draft.ServiceId = serviceId;
                             }
 
                             if (changeMessage)
@@ -88,6 +98,7 @@ namespace TelegramBot.BotHandlers
                                 {
                                     await botClient.SendMessage(chatId, getServicesRequest.ErrorMessage!);
                                     return;
+
                                 }
 
                                 var services = getServicesRequest.Context.Items;

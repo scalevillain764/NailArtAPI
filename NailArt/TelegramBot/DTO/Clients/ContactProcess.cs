@@ -1,14 +1,15 @@
 ﻿using System.Text.Json.Serialization;
-using ContactState = TelegramBot.StateMachines.ContactState;
+using ContactState = TelegramBot.StateMachines.Clients.ContactState;
 using TelegramBot.BotFlows;
-namespace TelegramBot.DTO
+using TelegramBot.StateMachines.Clients;
+namespace TelegramBot.DTO.Clients
 {
     public class ContactProcess
     {
         public ContactState State { get; set; }
         public BotFlow Flow { get; set; }
-        public EditType? EditType { get; set; } = null;
-        public ContactProcess(ContactState state, BotFlow flow, EditType? editType)
+        public EditContactType? EditType { get; set; } = null;
+        public ContactProcess(ContactState state, BotFlow flow, EditContactType? editType)
         {
             State = state;
             Flow = flow;

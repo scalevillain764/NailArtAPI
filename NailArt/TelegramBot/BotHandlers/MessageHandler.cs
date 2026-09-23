@@ -5,7 +5,7 @@ using System.Drawing;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using TelegramBot.DTO;
+using TelegramBot.DTO.Clients;
 using TelegramBot.StateMachines;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 using TelegramBot.BotFlows;
@@ -58,7 +58,14 @@ namespace TelegramBot.BotHandlers
                     }
                 case BotFlow.EditUser:
                     {
-
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(BotFlow.EditUser));
+                        if (handler == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Не удалось отредактировать контакт ❌");
+                            return;
+                        }
+                        await handler.HandleAsync((long)userId, update.Message!, deserializedProcess, botClient, cancellationToken);
+                        break;
                     }
             }
         }

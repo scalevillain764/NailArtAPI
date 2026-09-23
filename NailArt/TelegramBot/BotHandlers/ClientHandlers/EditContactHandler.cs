@@ -7,23 +7,24 @@ using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
-using TelegramBot.DTO;
+using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
 using Infrastructure.Responses;
-using TelegramBot.StateMachines;
+using TelegramBot.StateMachines.Clients;
+using TelegramBot.Abstractions;
 namespace TelegramBot.BotHandlers
 {
-    public class EditContactHandler : IOperationHandler
+    public class EditContactTypeHandler : BaseOperationHandler<ContactProcess>
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
-        public EditContactHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator)
+        public EditContactTypeHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator)
         {
             _redis = connectionMultiplexer.GetDatabase();
             _mediator = mediator;
         }
-        public bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.EditUser;
-        public async Task HandleAsync(long userId, Message message, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
+        public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.EditUser;
+        public override async Task HandleAsync(long userId, Message message, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
             var userExists = await _mediator.Send(new CheckClientByIdQuery(userId), token);
             if(!userExists)
@@ -39,7 +40,7 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var draft = JsonSerializer.Deserialize<EditContactDraft>((string)serializedDraft!);
+            var draft = JsonSerializer.Deserialize<EditContactTypeDraft>((string)serializedDraft!);
             if (draft == null)
             {
                 await botClient.SendMessage(message.Chat.Id, "Что-то пошло не так");
@@ -101,7 +102,7 @@ namespace TelegramBot.BotHandlers
                     }
             }
         }
-        public async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
+        public override async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
             if (process.State != ContactState.WaitingConfirmationUser)
             {
@@ -116,7 +117,7 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var deserializedDraft = JsonSerializer.Deserialize<EditContactDraft>((string)cachedDraft!);
+            var deserializedDraft = JsonSerializer.Deserialize<EditContactTypeDraft>((string)cachedDraft!);
             if (deserializedDraft == null)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
@@ -133,17 +134,17 @@ namespace TelegramBot.BotHandlers
 
             switch(process.EditType)
             {
-                case EditType.Name:
+                case EditContactType.Name:
                     {
                         result = await _mediator.Send(new EditClientNameCommand(userId, deserializedDraft.Name), token);
                         break;
                     }
-                case EditType.Phone:
+                case EditContactType.Phone:
                     {
                         result = await _mediator.Send(new EditClientPhoneCommand(userId, deserializedDraft.Phone), token);
                         break;
                     }
-                case EditType.UserName:
+                case EditContactType.UserName:
                     {
                         result = await _mediator.Send(new EditClientUserNameCommand(userId, deserializedDraft.UserName), token);
                         break;

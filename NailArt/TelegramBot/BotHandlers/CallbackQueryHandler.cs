@@ -1,4 +1,5 @@
-﻿using Application.Clients;
+﻿using Application.Bookings.DTO;
+using Application.Clients;
 using MediatR;
 using StackExchange.Redis;
 using System.Drawing;
@@ -6,9 +7,9 @@ using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
-using TelegramBot.DTO;
+using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
-using TelegramBot.StateMachines;
+using TelegramBot.StateMachines.Clients;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 namespace TelegramBot.BotHandlers
 {
@@ -111,8 +112,8 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditType.Name);
-                        var newEditDraft = new EditContactDraft(null, null, null);
+                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditContactType.Name);
+                        var newEditDraft = new EditContactTypeDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -135,8 +136,8 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser, EditType.Phone);
-                        var newEditDraft = new EditContactDraft(null, null, null);
+                        var newProcess = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser, EditContactType.Phone);
+                        var newEditDraft = new EditContactTypeDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -172,8 +173,8 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser, EditType.UserName);
-                        var newEditDraft = new EditContactDraft(null, null, null);
+                        var newProcess = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser, EditContactType.UserName);
+                        var newEditDraft = new EditContactTypeDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -229,7 +230,7 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        process.EditType = EditType.Name;
+                        process.EditType = EditContactType.Name;
                         process.State = ContactState.EnterName;
 
                         var serializedProcess = JsonSerializer.Serialize(process);
@@ -257,7 +258,7 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        process.EditType = EditType.Phone;
+                        process.EditType = EditContactType.Phone;
                         process.State = ContactState.EnterPhone;
 
                         var serializedProcess = JsonSerializer.Serialize(process);

@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace TelegramBot.StateMachines
+namespace TelegramBot.StateMachines.Clients
 {
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public enum ContactState {

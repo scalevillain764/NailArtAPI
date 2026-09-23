@@ -1,7 +1,7 @@
 ﻿using System.Text.Json.Serialization;
-using ContactState = TelegramBot.StateMachines.ContactState;
+using ContactState = TelegramBot.StateMachines.Clients.ContactState;
 using TelegramBot.BotFlows;
-namespace TelegramBot.DTO
+namespace TelegramBot.DTO.Clients
 {
     public class ShareContactDraft
     {

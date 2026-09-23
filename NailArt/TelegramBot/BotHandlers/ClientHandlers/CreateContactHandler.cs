@@ -7,13 +7,13 @@ using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
-using TelegramBot.DTO;
+using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
-using TelegramBot.StateMachines;
-
+using TelegramBot.StateMachines.Clients;
+using TelegramBot.Abstractions;
 namespace TelegramBot.BotHandlers
 {
-    public class CreateContactHandler : IOperationHandler
+    public class CreateContactHandler : BaseOperationHandler<ContactProcess, Message>
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
@@ -27,8 +27,8 @@ namespace TelegramBot.BotHandlers
             _mediator = mediator;
         }
 
-        public bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateUser;
-        public async Task HandleAsync(
+        public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateUser;
+        public override async Task HandleAsync(
             long userId,
             Message message,
             ContactProcess process,
@@ -52,7 +52,7 @@ namespace TelegramBot.BotHandlers
                 {
                     draft.Name = message.Text;
 
-                    if (process.EditType != null && process.EditType == EditType.Name)
+                    if (process.EditType != null && process.EditType == EditContactType.Name)
                     {
                         process.EditType = null; 
                         process.State = ContactState.WaitingConfirmationUser;
@@ -105,7 +105,7 @@ namespace TelegramBot.BotHandlers
             }
         }
 
-        public async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
+        public override async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
         {
             if (process.State != ContactState.WaitingConfirmationUser)
             {

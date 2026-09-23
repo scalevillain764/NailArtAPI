@@ -4,7 +4,7 @@ using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
 using IMUpdateHandler = TelegramBot.Interfaces.IMUpdateHandler;
-namespace TelgramBot.Services
+namespace TelegramBot.Services
 {
     public class TelegramBotHostedService : BackgroundService
     {

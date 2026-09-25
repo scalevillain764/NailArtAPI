@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using TelegramBot.Buttons;
 using TelegramBot.BotFlows;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.DTO.Clients;
@@ -16,6 +17,7 @@ using TelegramBot.Interfaces;
 using TelegramBot.StateMachines.Bookings;
 using TelegramBot.StateMachines.Clients;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
+using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CallbackQueryHandler : IBotHandler
@@ -285,8 +287,6 @@ namespace TelegramBot.BotHandlers
                         var cachedProcess = results[0];
                         var cachedDraft = results[1];
 
-                        long? messageId = null;
-
                         if (!cachedProcess.IsNullOrEmpty) // незаконченное создание
                         {
                             var process = JsonSerializer.Deserialize<BookingProcess>(
@@ -320,6 +320,8 @@ namespace TelegramBot.BotHandlers
                                     return;
                                 }
 
+                                List<InlineKeyboardButton[]> buttons = new();
+
                                 var srvs = getServicesR.Context!.Items;
 
                                 StringBuilder stringb = new StringBuilder();
@@ -330,9 +332,16 @@ namespace TelegramBot.BotHandlers
                                 foreach (var s in srvs)
                                 {
                                     stringb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
+                                    buttons.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
                                 }
 
-                                var msg = await botClient.SendMessage(chatId, stringb.ToString(), cancellationToken: cancellationToken);
+
+                                buttons.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"), 
+                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
+
+                                var inlineKeyboard = new InlineKeyboardMarkup(buttons.ToArray()); // все 3 в столбик
+
+                                var msg = await botClient.SendMessage(chatId, stringb.ToString(), replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
                                 process.MessageWithServicesId = msg.Id;
 
                                 await _redis.StringSetAsync(
@@ -356,6 +365,8 @@ namespace TelegramBot.BotHandlers
 
                         var services = getServicesRequest.Context!.Items;
 
+                        List<InlineKeyboardButton[]> btns = new();
+
                         StringBuilder sb = new StringBuilder();
 
                         sb.Append($"Страница: {newProcess.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
@@ -364,9 +375,15 @@ namespace TelegramBot.BotHandlers
                         foreach (var s in services)
                         {
                             sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
+                            btns.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
                         }
 
-                        var message = await botClient.SendMessage(chatId, sb.ToString(), cancellationToken: cancellationToken);
+                        btns.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
+                            ButtonBuilder.Create("->", "button:choose_service:next_page") });
+
+                        var inlineK = new InlineKeyboardMarkup(btns.ToArray()); // все в столбик
+
+                        var message = await botClient.SendMessage(chatId, sb.ToString(), replyMarkup: inlineK, cancellationToken: cancellationToken);
                         newProcess.MessageWithServicesId = message.Id;
 
                         await Task.WhenAll(

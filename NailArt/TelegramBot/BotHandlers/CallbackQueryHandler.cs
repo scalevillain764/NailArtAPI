@@ -1,14 +1,19 @@
 ﻿using Application.Bookings.DTO;
 using Application.Clients;
+using Application.NailServices;
 using MediatR;
 using StackExchange.Redis;
+using System.Diagnostics;
 using System.Drawing;
+using System.Text;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
+using TelegramBot.DTO.Bookings;
 using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
+using TelegramBot.StateMachines.Bookings;
 using TelegramBot.StateMachines.Clients;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 namespace TelegramBot.BotHandlers
@@ -269,7 +274,113 @@ namespace TelegramBot.BotHandlers
                             ]);
 
                         break;
-                    }          
+                    }
+                case "booking:add": // REFACTOR LATER
+                    {
+                        var results = await Task.WhenAll(
+                            _redis.StringGetAsync($"booking:process:{userId}"),
+                            _redis.StringGetAsync($"booking:creation_draft:{userId}")
+                        );
+
+                        var cachedProcess = results[0];
+                        var cachedDraft = results[1];
+
+                        long? messageId = null;
+
+                        if (!cachedProcess.IsNullOrEmpty) // незаконченное создание
+                        {
+                            var process = JsonSerializer.Deserialize<BookingProcess>(
+                                (string)cachedProcess!);
+
+                            if (process == null)
+                                return;
+
+                            string text = process.State switch
+                            {
+                                BookingState.SelectService => "услугу",
+                                BookingState.SelectDay => "день",
+                                BookingState.SelectYear => "год",
+                                BookingState.SelectMonth => "месяц",
+                                BookingState.SelectTime => "время",
+                                _ => throw new KeyNotFoundException("Неизвестное состояние")
+                            };
+
+                            await botClient.SendMessage(
+                                chatId,
+                                $"Похоже, в прошлый раз вы не закончили создание записи. Пожалуйста, выберите {text}");
+
+                            if(process.State == BookingState.SelectService)
+                            {
+                                var getServicesR = await _mediator.
+                                   Send(new GetNailServicesQuery(process.Pagination.CurrentPage, process.Pagination.PageSize));
+
+                                if (!getServicesR.IsSuccess)
+                                {
+                                    await botClient.SendMessage(chatId, getServicesR.ErrorMessage!);
+                                    return;
+                                }
+
+                                var srvs = getServicesR.Context!.Items;
+
+                                StringBuilder stringb = new StringBuilder();
+
+                                stringb.Append($"Страница: {process.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesR.Context.TotalCount
+                                    / process.Pagination.PageSize)}\nТекущие услуги:\n");
+
+                                foreach (var s in srvs)
+                                {
+                                    stringb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
+                                }
+
+                                var msg = await botClient.SendMessage(chatId, stringb.ToString(), cancellationToken: cancellationToken);
+                                process.MessageWithServicesId = msg.Id;
+
+                                await _redis.StringSetAsync(
+                                    $"booking:process:{userId}", JsonSerializer.Serialize(process));
+                            }
+
+                            return;
+                        }
+
+                        var newProcess = new BookingProcess(BotFlow.CreateBooking, BookingState.SelectService, null, null);
+                        var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
+
+                        var getServicesRequest = await _mediator.
+                                   Send(new GetNailServicesQuery(newProcess.Pagination.CurrentPage, newProcess.Pagination.PageSize));
+
+                        if (!getServicesRequest.IsSuccess)
+                        {
+                            await botClient.SendMessage(chatId, getServicesRequest.ErrorMessage!);
+                            return;
+                        }
+
+                        var services = getServicesRequest.Context!.Items;
+
+                        StringBuilder sb = new StringBuilder();
+
+                        sb.Append($"Страница: {newProcess.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
+                            / newProcess.Pagination.PageSize)}\nТекущие услуги:\n");
+
+                        foreach (var s in services)
+                        {
+                            sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
+                        }
+
+                        var message = await botClient.SendMessage(chatId, sb.ToString(), cancellationToken: cancellationToken);
+                        newProcess.MessageWithServicesId = message.Id;
+
+                        await Task.WhenAll(
+                            _redis.StringSetAsync(
+                                $"booking:process:{userId}",
+                                JsonSerializer.Serialize(newProcess)),
+
+                            _redis.StringSetAsync(
+                                $"booking:creation_draft:{userId}",
+                                JsonSerializer.Serialize(newDraft))
+                        );
+                     
+                        break;
+                    }
             }
         }
     }

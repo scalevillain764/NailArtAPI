@@ -1,8 +1,10 @@
-﻿using Application.NailServices;
+﻿using Application.Bookings;
+using Application.NailServices;
 using Application.TimeSlots;
 using MediatR;
 using Microsoft.EntityFrameworkCore.Storage;
 using StackExchange.Redis;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Telegram.Bot;
@@ -15,7 +17,7 @@ using TelegramBot.StateMachines.Bookings;
 using IDatabase = StackExchange.Redis.IDatabase;
 namespace TelegramBot.BotHandlers
 {
-    public class CreateBookingHandler : BaseOperationHandler<BookingProcess, CallbackQuery>
+    public class CreateBookingHandler: BaseOperationHandler<BookingProcess, CallbackQuery>
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
@@ -25,7 +27,47 @@ namespace TelegramBot.BotHandlers
             _mediator = mediator;
         }
         public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateBooking;
-        public override 
+        public override async Task ConfirmAsync(long userId, long chatId, BookingProcess process, ITelegramBotClient botClient, CancellationToken token)
+        {
+            if(process.State != BookingState.WaitingForConfirmation)
+            {
+                await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: token);
+                return;
+            }
+
+            var cachedDraft = await _redis.StringGetAsync($"booking:creation_draft:{userId}");
+            if (cachedDraft.IsNullOrEmpty)
+            {
+                await botClient.SendMessage(chatId, $"Не удалось найти черновик");
+                return;
+            }
+
+            var draft = JsonSerializer.Deserialize<CreateBookingDraft>((string)cachedDraft!);
+            if (draft == null)
+            {
+                await botClient.SendMessage(chatId, $"Что-то пошло не так");
+                return;
+            }
+
+            var result = await _mediator
+                .Send(new CreateBookingCommand(userId, (Ulid)draft.ServiceId!, (DateTime)draft.DateTime!), token);
+
+            if (!result.IsSuccess)
+            {
+                await botClient.SendMessage(
+                    chatId,
+                    result.ErrorMessage ?? "Записаться не удалось❌");
+                return;
+            }
+
+            await _redis.KeyDeleteAsync($"booking:creation_draft:{userId}");
+            await _redis.KeyDeleteAsync($"booking:process:{userId}");
+
+            await botClient.SendMessage(
+                chatId,
+                "Вы успешно записались ✅");
+        }
+
         public override async Task HandleAsync(
             long userId,
             CallbackQuery query,
@@ -34,8 +76,8 @@ namespace TelegramBot.BotHandlers
             CancellationToken token
         )
         {
-            long chatId = query.Message.Chat.Id;
-            var Data = query.Data;
+            long chatId = query.Message!.Chat.Id;
+            var Data = query.Data!;
 
             var cachedDraft = await _redis.StringGetAsync($"booking:creation_draft:{userId}");
             if(cachedDraft.IsNullOrEmpty)
@@ -81,19 +123,7 @@ namespace TelegramBot.BotHandlers
                                     }
                             }
 
-                            if (Data.StartsWith("service:"))
-                            {
-                                var serviceIdString = Data["service:".Length..];
-
-                                if (!Ulid.TryParse(serviceIdString, out var serviceId))
-                                    return;
-
-                                draft.ServiceId = serviceId;
-
-                                process.State = process.EditType is EditBookingType.Service ? BookingState.WaitingForConfirmation : BookingState.SelectYear;
-                            }
-
-                            if (changeMessage)
+                            if (changeMessage) 
                             {
                                 var getServicesRequest = await _mediator.
                                     Send(new GetNailServicesQuery(process.Pagination.CurrentPage, process.Pagination.PageSize));
@@ -102,25 +132,59 @@ namespace TelegramBot.BotHandlers
                                 {
                                     await botClient.SendMessage(chatId, getServicesRequest.ErrorMessage!);
                                     return;
-
                                 }
 
-                                var services = getServicesRequest.Context.Items;
+                                var services = getServicesRequest.Context!.Items;
 
                                 StringBuilder sb = new StringBuilder();
+
+                                sb.Append($"Страница: {process.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
+                                    / process.Pagination.PageSize)}\nТекущие услуги:\n");
 
                                 foreach (var s in services)
                                 {
                                     sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
                                 }
-
-                                string newText =
-                                    $"Страница: {process.Pagination.CurrentPage}/{/*ceil*/(getServicesRequest.Context.TotalCount / process.Pagination.PageSize)}\n" +
-                                    $"Текущие услуги:\n" +
-                                    sb.ToString();
-
-                                await botClient.EditMessageText(chatId, process.MessageWithServicesId, newText);
+                               
+                                await botClient.EditMessageText(chatId, (int)process.MessageWithServicesId!, sb.ToString());
                             }
+                        }
+
+                        if (Data.StartsWith("service:"))
+                        {
+                            var serviceIdString = Data["service:".Length..];
+
+                            if (!Ulid.TryParse(serviceIdString, out var serviceId))
+                                return;
+
+                            draft.ServiceId = serviceId;
+
+                            process.State = process.EditType is EditBookingType.Service ? BookingState.WaitingForConfirmation : BookingState.SelectYear;
+
+                            StringBuilder sb = new StringBuilder();
+
+                            var serviceRequest = await _mediator
+                                                        .Send(new GetNailServiceQuery((Ulid)draft.ServiceId), token);
+
+                            if(!serviceRequest.IsSuccess)
+                            {
+                                await botClient.SendMessage(chatId, serviceRequest.ErrorMessage!);
+                                return;
+                            }
+
+                            var service = serviceRequest.Context!;
+
+                            sb.Append($"Так выглядит ваша запись:\nКлиент №{draft.UserId}\n\nУслуга:")
+                                .Append($"{service.Name}\n{service.ShortDescription}\nДлительность: {service.DurationMinutes}\n{service.Price} BYN\n\n")
+                                .Append($"Дата и время: {draft!.DateTime!.Value.ToString("HH:mm dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture)}");
+
+                            await Task.WhenAll([
+                                _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
+                                botClient.SendMessage(chatId,
+                                    process.State ==  BookingState.WaitingForConfirmation ? $"Так выглядит ваша запись: {sb.ToString()}" : "Выберите, пожалуйста, год",
+                                    cancellationToken: token)
+                                ]);
                         }
                         break;
                     }
@@ -139,6 +203,12 @@ namespace TelegramBot.BotHandlers
                             draft.Year = year;
 
                             process.State = BookingState.SelectMonth;
+
+                            await Task.WhenAll([
+                               _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
+                                botClient.SendMessage(chatId, "Выберите, пожалуйста, месяц", cancellationToken: token)
+                               ]);
                         }
                         break;
                     }
@@ -157,6 +227,12 @@ namespace TelegramBot.BotHandlers
                             draft.Month = month;
 
                             process.State = BookingState.SelectDay;
+
+                            await Task.WhenAll([
+                               _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
+                                botClient.SendMessage(chatId, "Выберите, пожалуйста, день", cancellationToken: token)
+                               ]);
                         }
                         break;
                     }
@@ -183,6 +259,13 @@ namespace TelegramBot.BotHandlers
                             draft.Day = day;
 
                             process.State = BookingState.SelectTime;
+
+
+                            await Task.WhenAll([
+                               _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
+                                botClient.SendMessage(chatId, "Выберите, пожалуйста, время", cancellationToken: token)
+                               ]);
                         }
                         break;
                     }
@@ -212,6 +295,29 @@ namespace TelegramBot.BotHandlers
                             draft.DateTime = newDateTime;
 
                             process.State = BookingState.WaitingForConfirmation;
+
+                            StringBuilder sb = new StringBuilder();
+
+                            var serviceRequest = await _mediator
+                                                        .Send(new GetNailServiceQuery((Ulid)draft.ServiceId), token);
+
+                            if (!serviceRequest.IsSuccess)
+                            {
+                                await botClient.SendMessage(chatId, serviceRequest.ErrorMessage!);
+                                return;
+                            }
+
+                            var service = serviceRequest.Context!;
+
+                            sb.Append($"Так выглядит ваша запись:\nКлиент №{draft.UserId}\n\nУслуга:")
+                                .Append($"{service.Name}\n{service.ShortDescription}\nДлительность: {service.DurationMinutes}\n{service.Price} BYN\n\n")
+                                .Append($"Дата и время: {draft!.DateTime!.Value.ToString("HH:mm dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture)}");
+
+                            await Task.WhenAll([
+                                _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
+                                botClient.SendMessage(chatId,  $"Так выглядит ваша запись: {sb.ToString()}", cancellationToken: token)
+                                ]);
                         }
 
                         break;

@@ -5,13 +5,17 @@
         public long? UserId { get; set; }
         public Ulid? ServiceId { get; set; }
         public TimeOnly? Time { get; set; }
-        public DateOnly? Date { get; set; }
+        public int? Year { get; set; }
+        public int? Month { get; set; }
+        public int? Day { get; set; }
         public DateTime? DateTime { get; set; }
-        public CreateBookingDraft(long? userId, Ulid? serviceId, DateOnly? date, TimeOnly? time, DateTime? dateTime)
+        public CreateBookingDraft(long? userId, Ulid? serviceId, int? year, int? month, int? day, TimeOnly? time, DateTime? dateTime)
         {
             UserId = userId;
             ServiceId = serviceId;
-            Date = date;
+            Month = month;
+            Year = year;
+            Day = day;
             Time = time;
             DateTime = dateTime;
         }

@@ -1,4 +1,4 @@
 ﻿namespace TelegramBot.StateMachines.Clients
 { 
-    public enum EditContactType { Name, Phone, UserName}
+    public enum EditContactType { Name, Phone, UserName }
 }

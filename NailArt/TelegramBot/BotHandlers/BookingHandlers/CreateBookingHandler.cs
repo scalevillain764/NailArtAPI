@@ -1,4 +1,5 @@
 ﻿using Application.NailServices;
+using Application.TimeSlots;
 using MediatR;
 using Microsoft.EntityFrameworkCore.Storage;
 using StackExchange.Redis;
@@ -24,6 +25,7 @@ namespace TelegramBot.BotHandlers
             _mediator = mediator;
         }
         public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateBooking;
+        public override 
         public override async Task HandleAsync(
             long userId,
             CallbackQuery query,
@@ -87,6 +89,8 @@ namespace TelegramBot.BotHandlers
                                     return;
 
                                 draft.ServiceId = serviceId;
+
+                                process.State = process.EditType is EditBookingType.Service ? BookingState.WaitingForConfirmation : BookingState.SelectYear;
                             }
 
                             if (changeMessage)
@@ -116,8 +120,100 @@ namespace TelegramBot.BotHandlers
                                     sb.ToString();
 
                                 await botClient.EditMessageText(chatId, process.MessageWithServicesId, newText);
-                            }                          
+                            }
                         }
+                        break;
+                    }
+                case BookingState.SelectYear:
+                    {
+                        if (Data.StartsWith("year:"))
+                        {
+                            var yearString = Data["year:".Length..];
+
+                            if (!int.TryParse(yearString, out var year))
+                            {
+                                await botClient.SendMessage(chatId, "Выберите корректный год");
+                                return;
+                            }
+
+                            draft.Year = year;
+
+                            process.State = BookingState.SelectMonth;
+                        }
+                        break;
+                    }
+                case BookingState.SelectMonth:
+                    {
+                        if(Data.StartsWith("month:"))
+                        {
+                            var monthString = Data["month:".Length..];
+
+                            if(!int.TryParse(monthString, out var month))
+                            {
+                                await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                                return;
+                            }
+
+                            draft.Month = month;
+
+                            process.State = BookingState.SelectDay;
+                        }
+                        break;
+                    }
+                case BookingState.SelectDay:
+                    {
+                        if (Data.StartsWith("day:"))
+                        {
+                            var dayString = Data["day:".Length..];
+
+                            if (!int.TryParse(dayString, out var day))
+                            {
+                                await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                                return;
+                            }
+
+                            int days = DateTime.DaysInMonth((int)draft.Year!, (int)draft.Month!);
+
+                            if (day > days)
+                            {
+                                await botClient.SendMessage(chatId, "Выберите корректный день");
+                                return;
+                            }
+
+                            draft.Day = day;
+
+                            process.State = BookingState.SelectTime;
+                        }
+                        break;
+                    }
+                case BookingState.SelectTime:
+                    {
+                        var curDateTime = new DateTime((int)draft.Year!, (int)draft.Month!, (int)draft.Day!);
+
+                        var allTimeAtCurrentDay = await _mediator.Send(new GetFreeSlotsQuery(curDateTime, (Ulid)draft.ServiceId!));
+
+                        if(Data.StartsWith("time:"))
+                        {
+                            var timeString = Data["time:".Length..];
+                            if(!TimeOnly.TryParse(timeString, out var time))
+                            {
+                                await botClient.SendMessage(chatId, "Выьерите корректное время");
+                                return;
+                            }
+
+                            var newDateTime = curDateTime.AddHours(time.Hour).AddMinutes(time.Minute);
+
+                            if (newDateTime.Date < DateTime.UtcNow.Date)
+                            {
+                                await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                                return;
+                            }
+
+                            draft.DateTime = newDateTime;
+
+                            process.State = BookingState.WaitingForConfirmation;
+                        }
+
                         break;
                     }
             }

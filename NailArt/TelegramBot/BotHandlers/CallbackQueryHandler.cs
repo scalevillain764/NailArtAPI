@@ -2,7 +2,6 @@
 using Application.Clients;
 using Application.NailServices;
 using MediatR;
-using StackExchange.Redis;
 using System.Diagnostics;
 using System.Drawing;
 using System.Text;
@@ -17,17 +16,18 @@ using TelegramBot.Interfaces;
 using TelegramBot.StateMachines.Bookings;
 using TelegramBot.StateMachines.Clients;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
+using IRedisService = TelegramBot.Interfaces.IRedisService;
 using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CallbackQueryHandler : IBotHandler
     {
-        private readonly IDatabase _redis;
+        private readonly IRedisService _redisService;
         private readonly IMediator _mediator;
         private readonly IEnumerable<IOperationHandler> _handlers;
-        public CallbackQueryHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator, IEnumerable<IOperationHandler> handlers)
+        public CallbackQueryHandler(IRedisService redisService, IMediator mediator, IEnumerable<IOperationHandler> handlers)
         {
-            _redis = connectionMultiplexer.GetDatabase();
+            _redisService = redisService;
             _mediator = mediator;
             _handlers = handlers;
         }
@@ -60,22 +60,11 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var results = await Task.WhenAll(
-                            _redis.StringGetAsync($"contact:process:{userId}"),
-                            _redis.StringGetAsync($"contact:creation_draft:{userId}")
-                        );
+                        var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
+                        var draft = await _redisService.GetDraftAsync<ShareContactDraft>(userId);
 
-                        var cachedProcess = results[0];
-                        var cachedDraft = results[1];
-
-                        if (!cachedProcess.IsNullOrEmpty) // незаконченное создание
+                        if(process != null)
                         {
-                            var process = JsonSerializer.Deserialize<ContactProcess>(
-                                (string)cachedProcess!);
-
-                            if (process == null)
-                                return;
-
                             string text = process.State switch
                             {
                                 ContactState.EnterName => "имя",
@@ -93,20 +82,12 @@ namespace TelegramBot.BotHandlers
                         var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser, null);
                         var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
 
-                        await Task.WhenAll(
-                            _redis.StringSetAsync(
-                                $"contact:process:{userId}",
-                                JsonSerializer.Serialize(newProcess)),
-
-                            _redis.StringSetAsync(
-                                $"contact:creation_draft:{userId}",
-                                JsonSerializer.Serialize(newDraft))
-                        );
-
-                        await botClient.SendMessage(
-                            chatId,
-                            "Пожалуйста, введите имя");
-
+                        await Task.WhenAll([
+                            _redisService.SaveProcessAsync(userId, newProcess),
+                            _redisService.SaveDraftAsync(userId, draft),
+                            botClient.SendMessage(chatId, "Пожалуйста, введите имя", cancellationToken: cancellationToken)
+                            ]);
+          
                         break;
                     }
                 case "contact:edit_name":

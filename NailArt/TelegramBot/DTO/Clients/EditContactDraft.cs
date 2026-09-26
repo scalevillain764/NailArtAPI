@@ -1,11 +1,11 @@
 ﻿namespace TelegramBot.DTO.Clients
 {
-    public class EditContactTypeDraft
+    public class EditContactDraft
     {
         public string? Name { get; set; }
         public string? Phone { get; set; }
         public string? UserName { get; set; }
-        public EditContactTypeDraft(string? name, string? phone, string? userName)
+        public EditContactDraft(string? name, string? phone, string? userName)
         {
             Name = name;
             Phone = phone;

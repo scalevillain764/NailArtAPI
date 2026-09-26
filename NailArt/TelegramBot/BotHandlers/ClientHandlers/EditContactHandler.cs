@@ -9,12 +9,13 @@ using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
 using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
+using TelegramBot.Buttons;
 using Infrastructure.Responses;
 using TelegramBot.StateMachines.Clients;
 using TelegramBot.Abstractions;
 namespace TelegramBot.BotHandlers
 {
-    public class EditContactTypeHandler : BaseOperationHandler<ContactProcess>
+    public class EditContactTypeHandler : BaseOperationHandler<ContactProcess, Message>
     {
         private readonly IDatabase _redis;
         private readonly IMediator _mediator;
@@ -40,7 +41,7 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var draft = JsonSerializer.Deserialize<EditContactTypeDraft>((string)serializedDraft!);
+            var draft = JsonSerializer.Deserialize<EditContactDraft>((string)serializedDraft!);
             if (draft == null)
             {
                 await botClient.SendMessage(message.Chat.Id, "Что-то пошло не так");
@@ -54,6 +55,8 @@ namespace TelegramBot.BotHandlers
                         draft.Name = message.Text;
                         process.State = ContactState.WaitingConfirmationUser;
 
+                        var confirmationKeyboard = ButtonBuilder.ContactEditingConfirmationKeyboard();
+
                         await Task.WhenAll([
                             _redis.StringSetAsync(
                             $"contact:process:{userId}",
@@ -61,7 +64,11 @@ namespace TelegramBot.BotHandlers
 
                             _redis.StringSetAsync(
                             $"contact:edit_draft:{userId}",
-                            JsonSerializer.Serialize(draft))
+                            JsonSerializer.Serialize(draft)),
+
+                            botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
+                            $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
+                            $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: confirmationKeyboard)
                             ]);
 
                         break;
@@ -71,6 +78,8 @@ namespace TelegramBot.BotHandlers
                         draft.Phone = message.Text;
                         process.State = ContactState.WaitingConfirmationUser;
 
+                        var confirmationKeyboard = ButtonBuilder.ContactEditingConfirmationKeyboard();
+
                         await Task.WhenAll([
                             _redis.StringSetAsync(
                             $"contact:process:{userId}",
@@ -78,7 +87,11 @@ namespace TelegramBot.BotHandlers
 
                             _redis.StringSetAsync(
                             $"contact:edit_draft:{userId}",
-                            JsonSerializer.Serialize(draft))
+                            JsonSerializer.Serialize(draft)),
+
+                            botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
+                            $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
+                            $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: confirmationKeyboard)
                             ]);
 
                         break;
@@ -88,6 +101,8 @@ namespace TelegramBot.BotHandlers
                         draft.UserName = message.Text;
                         process.State = ContactState.WaitingConfirmationUser;
 
+                        var confirmationKeyboard = ButtonBuilder.ContactEditingConfirmationKeyboard();
+
                         await Task.WhenAll([
                             _redis.StringSetAsync(
                             $"contact:process:{userId}",
@@ -95,7 +110,11 @@ namespace TelegramBot.BotHandlers
 
                             _redis.StringSetAsync(
                             $"contact:edit_draft:{userId}",
-                            JsonSerializer.Serialize(draft))
+                            JsonSerializer.Serialize(draft)),
+
+                             botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
+                            $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
+                            $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: confirmationKeyboard)
                             ]);
 
                         break;
@@ -117,7 +136,7 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var deserializedDraft = JsonSerializer.Deserialize<EditContactTypeDraft>((string)cachedDraft!);
+            var deserializedDraft = JsonSerializer.Deserialize<EditContactDraft>((string)cachedDraft!);
             if (deserializedDraft == null)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");

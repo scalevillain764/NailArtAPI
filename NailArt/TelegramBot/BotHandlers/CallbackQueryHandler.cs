@@ -120,7 +120,7 @@ namespace TelegramBot.BotHandlers
                         }
 
                         var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditContactType.Name);
-                        var newEditDraft = new EditContactTypeDraft(null, null, null);
+                        var newEditDraft = new EditContactDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -144,7 +144,7 @@ namespace TelegramBot.BotHandlers
                         }
 
                         var newProcess = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser, EditContactType.Phone);
-                        var newEditDraft = new EditContactTypeDraft(null, null, null);
+                        var newEditDraft = new EditContactDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -181,7 +181,7 @@ namespace TelegramBot.BotHandlers
                         }
 
                         var newProcess = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser, EditContactType.UserName);
-                        var newEditDraft = new EditContactTypeDraft(null, null, null);
+                        var newEditDraft = new EditContactDraft(null, null, null);
 
                         var serializedProcess = JsonSerializer.Serialize(newProcess);
                         var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
@@ -194,7 +194,7 @@ namespace TelegramBot.BotHandlers
 
                         break;
                     }         
-                case "confirm":
+                case "contact:confirm":
                     {
                         var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
                         if(cachedProcess.IsNullOrEmpty)
@@ -334,7 +334,6 @@ namespace TelegramBot.BotHandlers
                                     stringb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
                                     buttons.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
                                 }
-
 
                                 buttons.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"), 
                                     ButtonBuilder.Create("->", "button:choose_service:next_page") });

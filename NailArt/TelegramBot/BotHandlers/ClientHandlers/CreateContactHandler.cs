@@ -9,8 +9,10 @@ using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
 using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
+using TelegramBot.Buttons;
 using TelegramBot.StateMachines.Clients;
 using TelegramBot.Abstractions;
+using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CreateContactHandler : BaseOperationHandler<ContactProcess, Message>
@@ -56,9 +58,12 @@ namespace TelegramBot.BotHandlers
                     {
                         process.EditType = null; 
                         process.State = ContactState.WaitingConfirmationUser;
+
+                        var clientConfirmationKeyboard = ButtonBuilder.ContactCreatingConfirmationKeyoard();
+
                         await botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
                                  $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
-                                 $"Юзер нейм: {draft.UserName ?? "отсутствует"}");
+                                 $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard);
                     } 
                     else
                     {
@@ -67,7 +72,7 @@ namespace TelegramBot.BotHandlers
                     }                       
 
                     await Task.WhenAll([
-                     _redis.StringSetAsync(
+                        _redis.StringSetAsync(
                          $"contact:process:{userId}",
                          JsonSerializer.Serialize(process)
                         ),
@@ -86,8 +91,10 @@ namespace TelegramBot.BotHandlers
                     process.EditType = null;
                     process.State = ContactState.WaitingConfirmationUser;
 
-                    await Task.WhenAll([
-                        _redis.StringSetAsync(
+                    var clientConfirmationKeyboard = ButtonBuilder.ContactCreatingConfirmationKeyoard();
+
+                        await Task.WhenAll([
+                            _redis.StringSetAsync(
                             $"contact:process:{userId}",
                             JsonSerializer.Serialize(process)
                         ),
@@ -97,8 +104,8 @@ namespace TelegramBot.BotHandlers
                         ),
                         botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
                          $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
-                         $"Юзер нейм: {draft.UserName ?? "отсутствует"}")
-                    ]);
+                         $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard)
+                        ]);
 
                     break;
                 }
@@ -125,7 +132,7 @@ namespace TelegramBot.BotHandlers
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
                 return;
-            }  
+            }
 
             var result = await _mediator.Send(new CreateClientCommand(
                             deserializedDraft.Id,
@@ -141,12 +148,11 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            await _redis.KeyDeleteAsync($"contact:creation_draft:{userId}");
-            await _redis.KeyDeleteAsync($"contact:process:{userId}");
-
-            await botClient.SendMessage(
-                chatId,
-                "Ваш контакт успешно добавлен ✅");
+            await Task.WhenAll([
+                _redis.KeyDeleteAsync($"contact:creation_draft:{userId}"),
+                _redis.KeyDeleteAsync($"contact:process:{userId}"),
+                botClient.SendMessage(chatId, "Ваш контакт успешно добавлен ✅")
+                ]);
         }
     }
 }

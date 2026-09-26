@@ -16,6 +16,7 @@ using TelegramBot.Interfaces;
 using TelegramBot.StateMachines.Bookings;
 using TelegramBot.Buttons;
 using IDatabase = StackExchange.Redis.IDatabase;
+using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CreateBookingHandler: BaseOperationHandler<BookingProcess, CallbackQuery>
@@ -61,12 +62,11 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            await _redis.KeyDeleteAsync($"booking:creation_draft:{userId}");
-            await _redis.KeyDeleteAsync($"booking:process:{userId}");
-
-            await botClient.SendMessage(
-                chatId,
-                "Вы успешно записались ✅");
+            await Task.WhenAll([
+                _redis.KeyDeleteAsync($"booking:creation_draft:{userId}"),
+                _redis.KeyDeleteAsync($"booking:process:{userId}"),
+                 botClient.SendMessage(chatId, "Вы успешно записались ✅")
+                ]);
         }
 
         public override async Task HandleAsync(
@@ -138,6 +138,7 @@ namespace TelegramBot.BotHandlers
                                 var services = getServicesRequest.Context!.Items;
 
                                 StringBuilder sb = new StringBuilder();
+                                List<InlineKeyboardButton[]> serviceButtons = new();
 
                                 sb.Append($"Страница: {process.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
                                     / process.Pagination.PageSize)}\nТекущие услуги:\n");
@@ -145,9 +146,15 @@ namespace TelegramBot.BotHandlers
                                 foreach (var s in services)
                                 {
                                     sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
+                                    serviceButtons.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
                                 }
-                               
-                                await botClient.EditMessageText(chatId, (int)process.MessageWithServicesId!, sb.ToString());
+
+                                serviceButtons.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
+                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
+
+                                var serviceKeyboard = new InlineKeyboardMarkup(serviceButtons.ToArray()); // все 3 в столбик
+
+                                await botClient.EditMessageText(chatId, (int)process.MessageWithServicesId!, sb.ToString(), replyMarkup: serviceKeyboard, cancellationToken: token);
                             }
                         }
 
@@ -174,16 +181,19 @@ namespace TelegramBot.BotHandlers
                             }
 
                             var service = serviceRequest.Context!;
-
+                            
                             sb.Append($"Так выглядит ваша запись:\nКлиент №{draft.UserId}\n\nУслуга:")
                                 .Append($"{service.Name}\n{service.ShortDescription}\nДлительность: {service.DurationMinutes}\n{service.Price} BYN\n\n")
                                 .Append($"Дата и время: {draft!.DateTime!.Value.ToString("HH:mm dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture)}");
+
+                            var confirmationKeyboard = ButtonBuilder.BookingConfirmationKeyboard();
 
                             await Task.WhenAll([
                                 _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
                                 _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
                                 botClient.SendMessage(chatId,
                                     process.State ==  BookingState.WaitingForConfirmation ? $"Так выглядит ваша запись: {sb.ToString()}" : "Выберите, пожалуйста, год",
+                                    replyMarkup: process.State == BookingState.WaitingForConfirmation ? confirmationKeyboard : null,
                                     cancellationToken: token)
                                 ]);
                         }
@@ -230,7 +240,7 @@ namespace TelegramBot.BotHandlers
                             process.State = BookingState.SelectDay;
 
                             await Task.WhenAll([
-                               _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
+                                _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
                                 _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
                                 botClient.SendMessage(chatId, "Выберите, пожалуйста, день", cancellationToken: token)
                                ]);
@@ -281,7 +291,7 @@ namespace TelegramBot.BotHandlers
                             var timeString = Data["time:".Length..];
                             if(!TimeOnly.TryParse(timeString, out var time))
                             {
-                                await botClient.SendMessage(chatId, "Выьерите корректное время");
+                                await botClient.SendMessage(chatId, "Выберите корректное время");
                                 return;
                             }
 
@@ -310,6 +320,8 @@ namespace TelegramBot.BotHandlers
 
                             var service = serviceRequest.Context!;
 
+                            var confirmationKeyboard = ButtonBuilder.BookingConfirmationKeyboard();
+
                             sb.Append($"Так выглядит ваша запись:\nКлиент №{draft.UserId}\n\nУслуга:")
                                 .Append($"{service.Name}\n{service.ShortDescription}\nДлительность: {service.DurationMinutes}\n{service.Price} BYN\n\n")
                                 .Append($"Дата и время: {draft!.DateTime!.Value.ToString("HH:mm dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture)}");
@@ -317,7 +329,9 @@ namespace TelegramBot.BotHandlers
                             await Task.WhenAll([
                                 _redis.StringSetAsync($"booking:creation_draft:{userId}", JsonSerializer.Serialize(draft)),
                                 _redis.StringSetAsync($"booking:process:{userId}", JsonSerializer.Serialize(process)),
-                                botClient.SendMessage(chatId,  $"Так выглядит ваша запись: {sb.ToString()}", cancellationToken: token)
+                                botClient.SendMessage(chatId,  $"Так выглядит ваша запись: {sb.ToString()}", 
+                                replyMarkup: confirmationKeyboard, 
+                                cancellationToken: token)
                                 ]);
                         }
 

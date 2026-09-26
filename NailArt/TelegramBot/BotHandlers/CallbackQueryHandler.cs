@@ -84,7 +84,7 @@ namespace TelegramBot.BotHandlers
 
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
-                            _redisService.SaveDraftAsync(userId, draft),
+                            _redisService.SaveDraftAsync(userId, newDraft),
                             botClient.SendMessage(chatId, "Пожалуйста, введите имя", cancellationToken: cancellationToken)
                             ]);
           
@@ -102,9 +102,6 @@ namespace TelegramBot.BotHandlers
 
                         var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditContactType.Name);
                         var newEditDraft = new EditContactDraft(null, null, null);
-
-                        var serializedProcess = JsonSerializer.Serialize(newProcess);
-                        var serializedEditDraft = JsonSerializer.Serialize(newEditDraft);
 
                         await Task.WhenAll([
                             _redis.StringSetAsync($"contact:process:{userId}", serializedProcess),

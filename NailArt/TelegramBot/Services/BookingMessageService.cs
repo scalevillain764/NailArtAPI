@@ -8,6 +8,7 @@ using TelegramBot.Buttons;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.Interfaces;
 using TelegramBot;
+using Application.NailServices.DTO;
 namespace TelegramBot.Services
 {
     public class BookingMessageService : IBookingMessageService
@@ -18,12 +19,7 @@ namespace TelegramBot.Services
         {
             _mediator = mediator;
         }
-
-        public async Task<Message?> SendServicesAsync(
-            ITelegramBotClient botClient,
-            long chatId,
-            BookingProcess process,
-            CancellationToken cancellationToken)
+        private async Task<(string?, IEnumerable<NailServiceResponse>)> GetServicesAsync(ITelegramBotClient botClient, long chatId, BookingProcess process, CancellationToken token)
         {
             var result = await _mediator.Send(
                 new GetNailServicesQuery(
@@ -35,9 +31,9 @@ namespace TelegramBot.Services
                 await botClient.SendMessage(
                     chatId,
                     result.ErrorMessage!,
-                    cancellationToken: cancellationToken);
+                    cancellationToken: token);
 
-                return null;
+                return (null, null);
             }
 
             var services = result.Context!.Items;
@@ -60,12 +56,43 @@ namespace TelegramBot.Services
                     $"{service.Price} BYN\n\n");
             }
 
+            return (text.ToString(), services);
+        }
+
+        public async Task<Message?> UpdateServiceMessageAsync(
+            ITelegramBotClient botClient,
+            long chatId,
+            int messageId, 
+            BookingProcess process,
+            CancellationToken token)
+        {
+            (string? text, IEnumerable<NailServiceResponse> services) = await GetServicesAsync(botClient, chatId, process, token);
+
+            var keyboard =
+                ButtonBuilder.BookingServicePaginationKeyboard(services);
+
+            return await botClient.EditMessageText(
+                chatId,
+                messageId,
+                text,
+                replyMarkup: keyboard,
+                cancellationToken: token);
+        }
+
+        public async Task<Message?> SendServicesAsync(
+            ITelegramBotClient botClient,
+            long chatId,
+            BookingProcess process,
+            CancellationToken cancellationToken)
+        {
+            (string? text, IEnumerable<NailServiceResponse> services) = await GetServicesAsync(botClient, chatId, process, cancellationToken);
+
             var keyboard =
                 ButtonBuilder.BookingServicePaginationKeyboard(services);
 
             return await botClient.SendMessage(
                 chatId,
-                text.ToString(),
+                text,
                 replyMarkup: keyboard,
                 cancellationToken: cancellationToken);
         }

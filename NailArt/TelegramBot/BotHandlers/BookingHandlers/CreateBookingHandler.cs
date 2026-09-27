@@ -9,23 +9,26 @@ using System.Text;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using TelegramBot.Abstractions;
 using TelegramBot.BotFlows;
+using TelegramBot.Buttons;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.Interfaces;
+using TelegramBot.Services;
 using TelegramBot.StateMachines.Bookings;
-using TelegramBot.Buttons;
 using IDatabase = StackExchange.Redis.IDatabase;
-using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CreateBookingHandler: BaseOperationHandler<BookingProcess, CallbackQuery>
     {
-        private readonly IDatabase _redis;
+        private readonly IRedisService _redis;
         private readonly IMediator _mediator;
-        public CreateBookingHandler(IConnectionMultiplexer redis, IMediator mediator)
+        private readonly IBookingMessageService _messageService;
+        public CreateBookingHandler(IBookingMessageService messageService, IRedisService redis, IMediator mediator)
         {
-            _redis = redis.GetDatabase();
+            _messageService = messageService;
+            _redis = redis;
             _mediator = mediator;
         }
         public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateBooking;
@@ -124,37 +127,21 @@ namespace TelegramBot.BotHandlers
                                     }
                             }
 
-                            if (changeMessage) 
+                            if (changeMessage)
                             {
-                                var getServicesRequest = await _mediator.
-                                    Send(new GetNailServicesQuery(process.Pagination.CurrentPage, process.Pagination.PageSize));
+                                var message = await _messageService.UpdateServiceMessageAsync(
+                                    botClient,
+                                    (long)chatId,
+                                    (int)process.MessageWithServicesId,
+                                    process,
+                                    token);
 
-                                if (!getServicesRequest.IsSuccess)
-                                {
-                                    await botClient.SendMessage(chatId, getServicesRequest.ErrorMessage!);
+                                if (message == null)
                                     return;
-                                }
 
-                                var services = getServicesRequest.Context!.Items;
+                                process.MessageWithServicesId = message.Id;
 
-                                StringBuilder sb = new StringBuilder();
-                                List<InlineKeyboardButton[]> serviceButtons = new();
-
-                                sb.Append($"Страница: {process.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
-                                    / process.Pagination.PageSize)}\nТекущие услуги:\n");
-
-                                foreach (var s in services)
-                                {
-                                    sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
-                                    serviceButtons.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
-                                }
-
-                                serviceButtons.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
-                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
-
-                                var serviceKeyboard = new InlineKeyboardMarkup(serviceButtons.ToArray()); // все 3 в столбик
-
-                                await botClient.EditMessageText(chatId, (int)process.MessageWithServicesId!, sb.ToString(), replyMarkup: serviceKeyboard, cancellationToken: token);
+                                await _redis.SaveProcessAsync(userId, process);
                             }
                         }
 

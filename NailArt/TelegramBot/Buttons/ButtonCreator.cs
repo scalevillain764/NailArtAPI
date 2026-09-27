@@ -15,8 +15,8 @@ namespace TelegramBot.Buttons
                 btns.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
             }
 
-            btns.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
-                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
+            btns.Add(new[] { ButtonBuilder.Create("<-", "button:choose_service:prev_page"), 
+                ButtonBuilder.Create("->", "button:choose_service:next_page") });
 
             return new InlineKeyboardMarkup(btns.ToArray());
         }

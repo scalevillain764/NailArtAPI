@@ -22,11 +22,16 @@ namespace TelegramBot.BotHandlers
 {
     public class CallbackQueryHandler : IBotHandler
     {
+        private readonly IBookingMessageService _bookingMessageService;
         private readonly IRedisService _redisService;
         private readonly IMediator _mediator;
         private readonly IEnumerable<IOperationHandler> _handlers;
-        public CallbackQueryHandler(IRedisService redisService, IMediator mediator, IEnumerable<IOperationHandler> handlers)
+        public CallbackQueryHandler(IBookingMessageService bookingMessageService,
+            IRedisService redisService, 
+            IMediator mediator, 
+            IEnumerable<IOperationHandler> handlers)
         {
+            _bookingMessageService = bookingMessageService;
             _redisService = redisService;
             _mediator = mediator;
             _handlers = handlers;
@@ -226,12 +231,12 @@ namespace TelegramBot.BotHandlers
 
                         break;
                     }
-                case "booking:add": // REFACTOR LATER
+                case "booking:add": 
                     {
-                        var process = await _redisService.GetProcessAsync<BookingProcess>(userId);
-                        var draft = await _redisService.GetDraftAsync<CreateBookingDraft>(userId);
+                        var process = await _redisService
+                            .GetProcessAsync<BookingProcess>(userId);
 
-                        if (process != null) // незаконченное создание
+                        if (process != null)
                         {
                             string text = process.State switch
                             {
@@ -248,39 +253,15 @@ namespace TelegramBot.BotHandlers
                                 $"Похоже, в прошлый раз вы не закончили создание записи. Пожалуйста, выберите {text}",
                                 cancellationToken: cancellationToken);
 
-                            if(process.State == BookingState.SelectService)
+                            if (process.State == BookingState.SelectService)
                             {
-                                var getServicesR = await _mediator.
-                                   Send(new GetNailServicesQuery(process.Pagination.CurrentPage, process.Pagination.PageSize));
+                                var message = await _bookingMessageService.SendServicesAsync(botClient, (long)chatId,
+                                    process, cancellationToken);
 
-                                if (!getServicesR.IsSuccess)
-                                {
-                                    await botClient.SendMessage(chatId, getServicesR.ErrorMessage!);
+                                if (message == null)
                                     return;
-                                }
 
-                                List<InlineKeyboardButton[]> buttons = new();
-
-                                var srvs = getServicesR.Context!.Items;
-
-                                StringBuilder stringb = new StringBuilder();
-
-                                stringb.Append($"Страница: {process.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesR.Context.TotalCount
-                                    / process.Pagination.PageSize)}\nТекущие услуги:\n");
-
-                                foreach (var s in srvs)
-                                {
-                                    stringb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
-                                    buttons.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
-                                }
-
-                                buttons.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"), 
-                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
-
-                                var inlineKeyboard = new InlineKeyboardMarkup(buttons.ToArray()); // все 3 в столбик
-
-                                var msg = await botClient.SendMessage(chatId, stringb.ToString(), replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
-                                process.MessageWithServicesId = msg.Id;
+                                process.MessageWithServicesId = message.Id;
 
                                 await _redisService.SaveProcessAsync(userId, process);
                             }
@@ -289,45 +270,23 @@ namespace TelegramBot.BotHandlers
                         }
 
                         var newProcess = new BookingProcess(BotFlow.CreateBooking, BookingState.SelectService, null, null);
-                        var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
 
-                        var getServicesRequest = await _mediator.
-                                   Send(new GetNailServicesQuery(newProcess.Pagination.CurrentPage, newProcess.Pagination.PageSize));
+                        var newDraft = new CreateBookingDraft(
+                            userId, null, null, null,
+                            null, null, null);
 
-                        if (!getServicesRequest.IsSuccess)
-                        {
-                            await botClient.SendMessage(chatId, getServicesRequest.ErrorMessage!);
+                        var servicesMessage = await _bookingMessageService.SendServicesAsync(
+                            botClient, (long)chatId, newProcess, cancellationToken);
+
+                        if (servicesMessage == null)
                             return;
-                        }
 
-                        var services = getServicesRequest.Context!.Items;
-
-                        List<InlineKeyboardButton[]> btns = new();
-
-                        StringBuilder sb = new StringBuilder();
-
-                        sb.Append($"Страница: {newProcess.Pagination.CurrentPage}/{(int)Math.Ceiling((double)getServicesRequest.Context.TotalCount
-                            / newProcess.Pagination.PageSize)}\nТекущие услуги:\n");
-
-                        foreach (var s in services)
-                        {
-                            sb.Append($"{s.Name}\n{s.ShortDescription}\nДлительность: {s.DurationMinutes}\n{s.Price} BYN\n\n");
-                            btns.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
-                        }
-
-                        btns.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
-                            ButtonBuilder.Create("->", "button:choose_service:next_page") });
-
-                        var inlineK = new InlineKeyboardMarkup(btns.ToArray()); // все в столбик
-
-                        var message = await botClient.SendMessage(chatId, sb.ToString(), replyMarkup: inlineK, cancellationToken: cancellationToken);
-                        newProcess.MessageWithServicesId = message.Id;
+                        newProcess.MessageWithServicesId = servicesMessage.Id;
 
                         await Task.WhenAll(
-                          _redisService.SaveProcessAsync(userId, newProcess),
-                          _redisService.SaveDraftAsync(userId, newDraft)
-                        );
-                     
+                            _redisService.SaveProcessAsync(userId, newProcess),
+                            _redisService.SaveDraftAsync(userId, newDraft));
+
                         break;
                     }
             }

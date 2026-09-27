@@ -1,10 +1,26 @@
-﻿using Telegram.Bot.Types.ReplyMarkups;
+﻿using Application.NailServices.DTO;
+using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.Buttons
 {
     public class ButtonBuilder
     {
         public static InlineKeyboardButton Create(string buttonText, string callbackData)
             => InlineKeyboardButton.WithCallbackData(buttonText, callbackData);
+
+        public static InlineKeyboardMarkup BookingServicePaginationKeyboard(IEnumerable<NailServiceResponse> services)
+        {
+            List<InlineKeyboardButton[]> btns = new();
+            foreach (var s in services)
+            {
+                btns.Add(new[] { ButtonBuilder.Create(s.Name, $"service:{s.Id}") });
+            }
+
+            btns.Add(new[] {ButtonBuilder.Create("<-", "button:choose_service:prev_page"),
+                                    ButtonBuilder.Create("->", "button:choose_service:next_page") });
+
+            return new InlineKeyboardMarkup(btns.ToArray());
+        }
+
         public static InlineKeyboardMarkup ContactCreatingConfirmationKeyoard()
             => new InlineKeyboardMarkup(new[]
             {

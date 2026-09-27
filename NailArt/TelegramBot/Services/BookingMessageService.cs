@@ -19,7 +19,7 @@ namespace TelegramBot.Services
         {
             _mediator = mediator;
         }
-        private async Task<(string?, IEnumerable<NailServiceResponse>)> GetServicesAsync(ITelegramBotClient botClient, long chatId, BookingProcess process, CancellationToken token)
+        private async Task<(string?, IEnumerable<NailServiceResponse>?)> GetServicesAsync(ITelegramBotClient botClient, long chatId, BookingProcess process, CancellationToken token)
         {
             var result = await _mediator.Send(
                 new GetNailServicesQuery(
@@ -66,10 +66,10 @@ namespace TelegramBot.Services
             BookingProcess process,
             CancellationToken token)
         {
-            (string? text, IEnumerable<NailServiceResponse> services) = await GetServicesAsync(botClient, chatId, process, token);
+            (string? text, IEnumerable<NailServiceResponse> services) = await GetServicesAsync(botClient, chatId, process!, token);
 
             var keyboard =
-                ButtonBuilder.BookingServicePaginationKeyboard(services);
+                ButtonBuilder.BookingServicePaginationKeyboard(services!);
 
             return await botClient.EditMessageText(
                 chatId,
@@ -85,14 +85,14 @@ namespace TelegramBot.Services
             BookingProcess process,
             CancellationToken cancellationToken)
         {
-            (string? text, IEnumerable<NailServiceResponse> services) = await GetServicesAsync(botClient, chatId, process, cancellationToken);
+            (string? text, IEnumerable<NailServiceResponse>? services) = await GetServicesAsync(botClient, chatId, process, cancellationToken);
 
             var keyboard =
-                ButtonBuilder.BookingServicePaginationKeyboard(services);
+                ButtonBuilder.BookingServicePaginationKeyboard(services!);
 
             return await botClient.SendMessage(
                 chatId,
-                text,
+                text!,
                 replyMarkup: keyboard,
                 cancellationToken: cancellationToken);
         }

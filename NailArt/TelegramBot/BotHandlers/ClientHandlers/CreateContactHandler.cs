@@ -17,15 +17,15 @@ namespace TelegramBot.BotHandlers
 {
     public class CreateContactHandler : BaseOperationHandler<ContactProcess, Message>
     {
-        private readonly IDatabase _redis;
+        private readonly IRedisService _redis;
         private readonly IMediator _mediator;
 
         public CreateContactHandler(
-            IConnectionMultiplexer connectionMultiplexer,
+            IRedisService redis,
             IMediator mediator
         )
         {
-            _redis = connectionMultiplexer.GetDatabase();
+            _redis = redis;
             _mediator = mediator;
         }
 
@@ -38,15 +38,14 @@ namespace TelegramBot.BotHandlers
             CancellationToken token
         )
         {
-            var cachedDraft = await _redis.StringGetAsync($"contact:creation_draft:{userId}");
+            long chatId = message.Chat.Id;
 
-            if (cachedDraft.IsNullOrEmpty)
+            var draft = await _redis.GetDraftAsync<ShareContactDraft>(userId);
+            if(draft == null)
+            {
+                await botClient.SendMessage(chatId, "Не удалось найти черновик", cancellationToken: token);
                 return;
-
-            var draft = JsonSerializer.Deserialize<ShareContactDraft>((string)cachedDraft!);
-
-            if (draft == null)
-                return;
+            }
 
             switch (process.State)
             {
@@ -72,14 +71,8 @@ namespace TelegramBot.BotHandlers
                     }                       
 
                     await Task.WhenAll([
-                        _redis.StringSetAsync(
-                         $"contact:process:{userId}",
-                         JsonSerializer.Serialize(process)
-                        ),
-                        _redis.StringSetAsync(
-                         $"contact:creation_draft:{userId}",
-                         JsonSerializer.Serialize(draft)
-                        ),
+                        _redis.SaveProcessAsync(userId, process),
+                        _redis.SaveDraftAsync(userId, process)
                     ]);
 
                     break;
@@ -94,17 +87,12 @@ namespace TelegramBot.BotHandlers
                     var clientConfirmationKeyboard = ButtonBuilder.ContactCreatingConfirmationKeyoard();
 
                         await Task.WhenAll([
-                            _redis.StringSetAsync(
-                            $"contact:process:{userId}",
-                            JsonSerializer.Serialize(process)
-                        ),
-                        _redis.StringSetAsync(
-                            $"contact:creation_draft:{userId}",
-                            JsonSerializer.Serialize(draft)
-                        ),
+                        _redis.SaveProcessAsync(userId, process),
+                        _redis.SaveDraftAsync(userId, process),
                         botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
                          $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
-                         $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard)
+                         $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard,
+                         cancellationToken: token)
                         ]);
 
                     break;
@@ -120,25 +108,19 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var cachedDraft = await _redis.StringGetAsync($"contact:creation_draft:{userId}");
-            if (cachedDraft.IsNullOrEmpty)
-            {
-                await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
-                return;
-            }
 
-            var deserializedDraft = JsonSerializer.Deserialize<ShareContactDraft>((string)cachedDraft!);
-            if (deserializedDraft == null)
+            var draft = await _redis.GetDraftAsync<ShareContactDraft>(userId);
+            if (draft == null)
             {
                 await botClient.SendMessage(chatId, $"Что-то пошло не так❌");
                 return;
             }
 
             var result = await _mediator.Send(new CreateClientCommand(
-                            deserializedDraft.Id,
-                            deserializedDraft.Name!,
-                            deserializedDraft.Phone!,
-                            deserializedDraft.UserName), token);
+                            draft.Id,
+                            draft.Name!,
+                            draft.Phone!,
+                            draft.UserName), token);
 
             if (!result.IsSuccess)
             {
@@ -149,10 +131,10 @@ namespace TelegramBot.BotHandlers
             }
 
             await Task.WhenAll([
-                _redis.KeyDeleteAsync($"contact:creation_draft:{userId}"),
-                _redis.KeyDeleteAsync($"contact:process:{userId}"),
+                _redis.DeleteProcessAsync<ContactProcess>(userId),
+                _redis.DeleteDraftAsync<ShareContactDraft>(userId),
                 botClient.SendMessage(chatId, "Ваш контакт успешно добавлен ✅")
-                ]);
+            ]);
         }
     }
 }

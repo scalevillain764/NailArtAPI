@@ -4,9 +4,9 @@ namespace TelegramBot.BotSessions
     public class BotSession
     {
         public BotFlow currentFlow { get; set; }
-        public BotSession()
+        public BotSession(BotFlow flow)
         {
-            currentFlow = BotFlow.Menu;
+            currentFlow = flow;
         }
     }
 }

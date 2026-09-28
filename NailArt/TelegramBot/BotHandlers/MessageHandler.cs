@@ -34,18 +34,40 @@ namespace TelegramBot.BotHandlers
             if (chatId == null)
                 return;
 
-            var session = await _redis.GetCurrentSession((long)userId);
-            if (session == null)
-                return;
-
-            if(message == "/start")
+            if (message == "/start")
             {
-                var newSession = new BotSession();
+                var currentSession = await _redis.GetCurrentSession((long)userId);
+
+                if (currentSession != null)
+                {
+                    await botClient.SendMessage(
+                        chatId,
+                        "Вы уже начали работу с ботом.",
+                        cancellationToken: cancellationToken);
+
+                    return;
+                }
+
+                var newSession = new BotSession(BotFlow.Menu);
+
                 await _redis.SaveCurrentSession((long)userId, newSession);
+
                 return;
             }
 
-            switch(session.currentFlow)
+            var session = await _redis.GetCurrentSession((long)userId);
+
+            if (currentSession == null)
+            {
+                await botClient.SendMessage(
+                    chatId,
+                    "Пожалуйста, сначала нажмите /start",
+                    cancellationToken: cancellationToken);
+
+                return;
+            }
+
+            switch (session.currentFlow)
             {
                 case BotFlow.CreateUser:
                     {

@@ -1,6 +1,8 @@
 ﻿using TelegramBot.BotHandlers;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.DTO.Clients;
+using TelegramBot.BotSessions;
+using TelegramBot.BotFlows;
 namespace TelegramBot.Interfaces
 {
     public interface IRedisService
@@ -11,5 +13,7 @@ namespace TelegramBot.Interfaces
         Task SaveDraftAsync<T>(long userId, T draft);
         Task DeleteProcessAsync<T>(long userId);
         Task DeleteDraftAsync<T>(long userId);
+        Task<BotSession?> GetCurrentSession(long userId);
+        Task SaveCurrentSession(long userId, BotSession curSession);
     }
 }

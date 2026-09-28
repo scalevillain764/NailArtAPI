@@ -3,5 +3,5 @@
 namespace TelegramBot.BotFlows 
 {
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public enum BotFlow { CreateUser, EditUser, CreateBooking, CancelBooking /*(cancel)*/};
+    public enum BotFlow { Menu, CreateUser, EditUser, CreateBooking, CancelBooking };
 }

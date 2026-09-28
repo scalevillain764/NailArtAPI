@@ -1,17 +1,18 @@
-﻿using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
-using Application.Bookings;
+﻿using Application.Bookings;
 using Application.NailServices;
 using Application.TimeSlots;
 using MediatR;
 using Microsoft.EntityFrameworkCore.Storage;
 using StackExchange.Redis;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 using TelegramBot.Abstractions;
 using TelegramBot.BotFlows;
+using TelegramBot.BotSessions;
 using TelegramBot.Buttons;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.Interfaces;
@@ -45,6 +46,7 @@ namespace TelegramBot.BotHandlers
             long chatId,
             BookingProcess process,
             ITelegramBotClient botClient,
+            BotSession currentSession,
             CancellationToken token
         )
         {
@@ -85,9 +87,12 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
+            currentSession.currentFlow = BotFlow.Menu;
+
             await Task.WhenAll([
                 _redis.DeleteDraftAsync<CreateBookingDraft>(userId),
                 _redis.DeleteProcessAsync<BookingProcess>(userId),
+                _redis.SaveCurrentSession(userId, currentSession),
                 botClient.SendMessage(chatId, "Вы успешно записались ✅", cancellationToken: token),
             ]);
         }

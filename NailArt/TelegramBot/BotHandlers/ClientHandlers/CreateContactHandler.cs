@@ -6,13 +6,15 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
+using TelegramBot.Abstractions;
 using TelegramBot.BotFlows;
+using TelegramBot.BotSessions;
+using TelegramBot.Buttons;
 using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
-using TelegramBot.Buttons;
 using TelegramBot.StateMachines.Clients;
-using TelegramBot.Abstractions;
-using Telegram.Bot.Types.ReplyMarkups;
+
 namespace TelegramBot.BotHandlers
 {
     public class CreateContactHandler : BaseOperationHandler<ContactProcess, Message>
@@ -20,16 +22,14 @@ namespace TelegramBot.BotHandlers
         private readonly IRedisService _redis;
         private readonly IMediator _mediator;
 
-        public CreateContactHandler(
-            IRedisService redis,
-            IMediator mediator
-        )
+        public CreateContactHandler(IRedisService redis, IMediator mediator)
         {
             _redis = redis;
             _mediator = mediator;
         }
 
         public override bool CanHandleAndConfirm(BotFlow flow) => flow == BotFlow.CreateUser;
+
         public override async Task HandleAsync(
             long userId,
             Message message,
@@ -41,9 +41,13 @@ namespace TelegramBot.BotHandlers
             long chatId = message.Chat.Id;
 
             var draft = await _redis.GetDraftAsync<ShareContactDraft>(userId);
-            if(draft == null)
+            if (draft == null)
             {
-                await botClient.SendMessage(chatId, "Не удалось найти черновик", cancellationToken: token);
+                await botClient.SendMessage(
+                    chatId,
+                    "Не удалось найти черновик",
+                    cancellationToken: token
+                );
                 return;
             }
 
@@ -55,24 +59,32 @@ namespace TelegramBot.BotHandlers
 
                     if (process.EditType != null && process.EditType == EditContactType.Name)
                     {
-                        process.EditType = null; 
+                        process.EditType = null;
                         process.State = ContactState.WaitingConfirmationUser;
 
-                        var clientConfirmationKeyboard = ButtonBuilder.ContactCreatingConfirmationKeyoard();
+                        var clientConfirmationKeyboard =
+                            ButtonBuilder.ContactCreatingConfirmationKeyoard();
 
-                        await botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
-                                 $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
-                                 $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard);
-                    } 
+                        await botClient.SendMessage(
+                            message.Chat.Id,
+                            $"Так выглядит ваше контакт:\n"
+                                + $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n"
+                                + $"Юзер нейм: {draft.UserName ?? "отсутствует"}",
+                            replyMarkup: clientConfirmationKeyboard
+                        );
+                    }
                     else
                     {
                         process.State = ContactState.EnterPhone;
-                        await botClient.SendMessage(message.Chat.Id, "Введите, пожалуйста, номер телефона");
-                    }                       
+                        await botClient.SendMessage(
+                            message.Chat.Id,
+                            "Введите, пожалуйста, номер телефона"
+                        );
+                    }
 
                     await Task.WhenAll([
                         _redis.SaveProcessAsync(userId, process),
-                        _redis.SaveDraftAsync(userId, process)
+                        _redis.SaveDraftAsync(userId, process),
                     ]);
 
                     break;
@@ -84,30 +96,41 @@ namespace TelegramBot.BotHandlers
                     process.EditType = null;
                     process.State = ContactState.WaitingConfirmationUser;
 
-                    var clientConfirmationKeyboard = ButtonBuilder.ContactCreatingConfirmationKeyoard();
+                    var clientConfirmationKeyboard =
+                        ButtonBuilder.ContactCreatingConfirmationKeyoard();
 
-                        await Task.WhenAll([
+                    await Task.WhenAll([
                         _redis.SaveProcessAsync(userId, process),
                         _redis.SaveDraftAsync(userId, process),
-                        botClient.SendMessage(message.Chat.Id, $"Так выглядит ваше контакт:\n" +
-                         $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n" +
-                         $"Юзер нейм: {draft.UserName ?? "отсутствует"}", replyMarkup: clientConfirmationKeyboard,
-                         cancellationToken: token)
-                        ]);
+                        botClient.SendMessage(
+                            message.Chat.Id,
+                            $"Так выглядит ваше контакт:\n"
+                                + $"Имя: {draft.Name}\nНомер телефона: {draft.Phone}\n"
+                                + $"Юзер нейм: {draft.UserName ?? "отсутствует"}",
+                            replyMarkup: clientConfirmationKeyboard,
+                            cancellationToken: token
+                        ),
+                    ]);
 
                     break;
                 }
             }
         }
 
-        public override async Task ConfirmAsync(long userId, long chatId, ContactProcess process, ITelegramBotClient botClient, CancellationToken token)
+        public override async Task ConfirmAsync(
+            long userId,
+            long chatId,
+            ContactProcess process,
+            ITelegramBotClient botClient,
+            BotSession currentSession,
+            CancellationToken token
+        )
         {
             if (process.State != ContactState.WaitingConfirmationUser)
             {
                 await botClient.SendMessage(chatId, "Сейчас подтверждение недоступно.");
                 return;
             }
-
 
             var draft = await _redis.GetDraftAsync<ShareContactDraft>(userId);
             if (draft == null)
@@ -116,24 +139,27 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            var result = await _mediator.Send(new CreateClientCommand(
-                            draft.Id,
-                            draft.Name!,
-                            draft.Phone!,
-                            draft.UserName), token);
+            var result = await _mediator.Send(
+                new CreateClientCommand(draft.Id, draft.Name!, draft.Phone!, draft.UserName),
+                token
+            );
 
             if (!result.IsSuccess)
             {
                 await botClient.SendMessage(
                     chatId,
-                    result.ErrorMessage ?? "Не удалось создать контакт ❌");
+                    result.ErrorMessage ?? "Не удалось создать контакт ❌"
+                );
                 return;
             }
+
+            currentSession.currentFlow = BotFlow.Menu;
 
             await Task.WhenAll([
                 _redis.DeleteProcessAsync<ContactProcess>(userId),
                 _redis.DeleteDraftAsync<ShareContactDraft>(userId),
-                botClient.SendMessage(chatId, "Ваш контакт успешно добавлен ✅")
+                _redis.SaveCurrentSession(userId, currentSession),
+                botClient.SendMessage(chatId, "Ваш контакт успешно добавлен ✅"),
             ]);
         }
     }

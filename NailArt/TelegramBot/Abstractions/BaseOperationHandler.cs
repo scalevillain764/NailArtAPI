@@ -1,6 +1,7 @@
 ﻿using Telegram.Bot;
 using Telegram.Bot.Types;
 using TelegramBot.BotFlows;
+using TelegramBot.BotSessions;
 using TelegramBot.Interfaces;
 namespace TelegramBot.Abstractions
 {
@@ -8,7 +9,7 @@ namespace TelegramBot.Abstractions
     {
         public abstract bool CanHandleAndConfirm(BotFlow flow);
         public abstract Task HandleAsync(long userId, TEvent _event, TProcess process, ITelegramBotClient botClient, CancellationToken token);
-        public abstract Task ConfirmAsync(long userId, long chatId, TProcess process, ITelegramBotClient botClient, CancellationToken token);
+        public abstract Task ConfirmAsync(long userId, long chatId, TProcess process, ITelegramBotClient botClient, BotSession currentSession, CancellationToken token);
 
         Task IOperationHandler.HandleAsync(long userId, object _event, object process, ITelegramBotClient botClient, CancellationToken token)
         {
@@ -18,10 +19,10 @@ namespace TelegramBot.Abstractions
                 $"Хэндлер ожидал тип {typeof(TEvent).Name}, но получил {process?.GetType().Name}");
         }
 
-        Task IOperationHandler.ConfirmAsync(long userId, long chatId, object process, ITelegramBotClient botClient, CancellationToken token)
+        Task IOperationHandler.ConfirmAsync(long userId, long chatId, object process, ITelegramBotClient botClient, BotSession currentSession, CancellationToken token)
         {
             if (process is TProcess typedProcess)
-                return ConfirmAsync(userId, chatId, typedProcess, botClient, token);
+                return ConfirmAsync(userId, chatId, typedProcess, botClient, currentSession, token);
             throw new ArgumentException($"Хэндлер ожидал тип {typeof(TProcess).Name}, но получил {process?.GetType().Name}");
         }
     }

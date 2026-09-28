@@ -10,16 +10,17 @@ using TelegramBot.StateMachines;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 using TelegramBot.BotFlows;
 using TelegramBot.Interfaces;
+using TelegramBot.BotSessions;
 namespace TelegramBot.BotHandlers
 {
     public class MessageHandler : IBotHandler
     {
-        private readonly IDatabase _redis;
+        private readonly IRedisService _redis;
         private readonly IMediator _mediator;
         private readonly IEnumerable<IOperationHandler> _handlers;
-        public MessageHandler(IConnectionMultiplexer connectionMultiplexer, IMediator mediator, IEnumerable<IOperationHandler> handlers)
+        public MessageHandler(IRedisService redis, IMediator mediator, IEnumerable<IOperationHandler> handlers)
         {
-            _redis = connectionMultiplexer.GetDatabase();
+            _redis = redis;
             _mediator = mediator;
             _handlers = handlers;
         }
@@ -33,17 +34,18 @@ namespace TelegramBot.BotHandlers
             if (chatId == null)
                 return;
 
-            var cachedProcess = await _redis.StringGetAsync($"contact:process:{userId}");
+            var session = await _redis.GetCurrentSession((long)userId);
+            if (session == null)
+                return;
 
-            if(cachedProcess.IsNullOrEmpty)
+            if(message == "/start")
             {
-                await botClient.SendMessage(chatId, $"Что-то пошло не так");
+                var newSession = new BotSession();
+                await _redis.SaveCurrentSession((long)userId, newSession);
                 return;
             }
 
-            var deserializedProcess = JsonSerializer.Deserialize<ContactProcess>((string)cachedProcess!);
-
-            switch(deserializedProcess.Flow)
+            switch(session.currentFlow)
             {
                 case BotFlow.CreateUser:
                     {
@@ -53,7 +55,12 @@ namespace TelegramBot.BotHandlers
                             await botClient.SendMessage(chatId, $"Не удалось создать контакт ❌");
                             return;
                         }
-                        await handler.HandleAsync((long)userId, update.Message!, deserializedProcess, botClient, cancellationToken);
+
+                        var process = await _redis.GetProcessAsync<ContactProcess>((long)userId);
+                        if (process == null)
+                            return;
+
+                        await handler.HandleAsync((long)userId, update.Message!, process, botClient, cancellationToken);
                         break;
                     }
                 case BotFlow.EditUser:
@@ -64,7 +71,12 @@ namespace TelegramBot.BotHandlers
                             await botClient.SendMessage(chatId, $"Не удалось отредактировать контакт ❌");
                             return;
                         }
-                        await handler.HandleAsync((long)userId, update.Message!, deserializedProcess, botClient, cancellationToken);
+
+                        var process = await _redis.GetProcessAsync<ContactProcess>((long)userId);
+                        if (process == null)
+                            return;
+
+                        await handler.HandleAsync((long)userId, update.Message!, process, botClient, cancellationToken);
                         break;
                     }
             }

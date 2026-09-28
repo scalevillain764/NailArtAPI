@@ -46,6 +46,10 @@ namespace TelegramBot.BotHandlers
             if (chatId == null)
                 return;
 
+            var currentSession = await _redisService.GetCurrentSession(userId);
+            if (currentSession == null)
+                return;
+
             var data = callback.Data;
 
             switch (data)
@@ -64,11 +68,12 @@ namespace TelegramBot.BotHandlers
 
                             return;
                         }
-
+                       
                         var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
                         var draft = await _redisService.GetDraftAsync<ShareContactDraft>(userId);
+                        currentSession.currentFlow = BotFlow.CreateUser;
 
-                        if(process != null)
+                        if (process != null)
                         {
                             string text = process.State switch
                             {
@@ -84,12 +89,13 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.CreateUser, null);
+                        var newProcess = new ContactProcess(ContactState.EnterName, null);
                         var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
-
+                        
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
                             _redisService.SaveDraftAsync(userId, newDraft),
+                            _redisService.SaveCurrentSession(userId, currentSession),
                             botClient.SendMessage(chatId, "Пожалуйста, введите имя", cancellationToken: cancellationToken)
                             ]);
           
@@ -105,12 +111,14 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterName, BotFlow.EditUser, EditContactType.Name);
+                        currentSession.currentFlow = BotFlow.EditUser;
+                        var newProcess = new ContactProcess(ContactState.EnterName, EditContactType.Name);
                         var newDraft = new EditContactDraft(null, null, null);
 
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
                             _redisService.SaveDraftAsync(userId, newDraft),
+                            _redisService.SaveCurrentSession(userId, currentSession),
                             botClient.SendMessage(chatId, "Введите имя", cancellationToken: cancellationToken)
                         ]);
 
@@ -126,12 +134,14 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterPhone, BotFlow.EditUser, EditContactType.Phone);
+                        currentSession.currentFlow = BotFlow.EditUser;
+                        var newProcess = new ContactProcess(ContactState.EnterPhone, EditContactType.Phone);
                         var newDraft = new EditContactDraft(null, null, null);
 
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
                             _redisService.SaveDraftAsync(userId, newDraft),
+                            _redisService.SaveCurrentSession(userId, currentSession),
                             botClient.SendMessage(chatId, "Введите номер телефона", cancellationToken: cancellationToken)
                         ]);
 
@@ -160,12 +170,14 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var newProcess = new ContactProcess(ContactState.EnterUserName, BotFlow.EditUser, EditContactType.UserName);
+                        currentSession.currentFlow = BotFlow.EditUser;
+                        var newProcess = new ContactProcess(ContactState.EnterUserName, EditContactType.UserName);
                         var newDraft = new EditContactDraft(null, null, null);
 
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
                             _redisService.SaveDraftAsync(userId, newDraft),
+                            _redisService.SaveCurrentSession(userId, currentSession),
                             botClient.SendMessage(chatId, "Введите юзер нейм", cancellationToken: cancellationToken)
                         ]);
 
@@ -180,14 +192,14 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
-                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(process.Flow));
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(currentSession.currentFlow));
                         if(handler == null)
                         {
                             await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: cancellationToken);
                             return;
                         }
 
-                        await handler.ConfirmAsync(userId, (long)chatId, process, botClient, cancellationToken);
+                        await handler.ConfirmAsync(userId, (long)chatId, process, botClient, currentSession, cancellationToken);
 
                         break;                  
                     }
@@ -200,11 +212,13 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
+                        currentSession.currentFlow = BotFlow.CreateUser;
                         process.EditType = EditContactType.Name;
                         process.State = ContactState.EnterName;
 
                         await Task.WhenAll([
                               _redisService.SaveProcessAsync(userId, process),
+                              _redisService.SaveCurrentSession(userId, currentSession),
                               botClient.SendMessage(chatId, "Введите новое имя")
                             ]);
 
@@ -219,6 +233,7 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
+                        currentSession.currentFlow = BotFlow.CreateUser;
                         process.EditType = EditContactType.Phone;
                         process.State = ContactState.EnterPhone;
 
@@ -226,6 +241,7 @@ namespace TelegramBot.BotHandlers
 
                         await Task.WhenAll([
                               _redisService.SaveProcessAsync(userId, process),
+                              _redisService.SaveCurrentSession(userId, currentSession),
                               botClient.SendMessage(chatId, "Введите новый номер телефона")
                             ]);
 
@@ -235,6 +251,8 @@ namespace TelegramBot.BotHandlers
                     {
                         var process = await _redisService
                             .GetProcessAsync<BookingProcess>(userId);
+
+                        currentSession.currentFlow = BotFlow.CreateBooking;
 
                         if (process != null)
                         {
@@ -266,10 +284,12 @@ namespace TelegramBot.BotHandlers
                                 await _redisService.SaveProcessAsync(userId, process);
                             }
 
+                            await _redisService.SaveCurrentSession(userId, currentSession);
+
                             return;
                         }
 
-                        var newProcess = new BookingProcess(BotFlow.CreateBooking, BookingState.SelectService, null, null);
+                        var newProcess = new BookingProcess(BookingState.SelectService, null, null);
 
                         var newDraft = new CreateBookingDraft(
                             userId, null, null, null,

@@ -7,12 +7,10 @@ namespace TelegramBot.DTO.Clients
     public class ContactProcess
     {
         public ContactState State { get; set; }
-        public BotFlow Flow { get; set; }
         public EditContactType? EditType { get; set; } = null;
-        public ContactProcess(ContactState state, BotFlow flow, EditContactType? editType)
+        public ContactProcess(ContactState state, EditContactType? editType)
         {
             State = state;
-            Flow = flow;
             EditType = editType;
         }
     }

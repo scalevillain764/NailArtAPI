@@ -1,4 +1,5 @@
-﻿using Application.Bookings.DTO;
+﻿using Application.Bookings;
+using Application.Bookings.DTO;
 using Application.Clients;
 using Application.NailServices;
 using MediatR;
@@ -8,20 +9,23 @@ using System.Text;
 using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using TelegramBot.Buttons;
+using Telegram.Bot.Types.ReplyMarkups;
 using TelegramBot.BotFlows;
+using TelegramBot.Buttons;
 using TelegramBot.DTO.Bookings;
 using TelegramBot.DTO.Clients;
 using TelegramBot.Interfaces;
 using TelegramBot.StateMachines.Bookings;
 using TelegramBot.StateMachines.Clients;
+using static Telegram.Bot.TelegramBotClient;
 using IBotHandler = TelegramBot.Interfaces.IBotHandler;
 using IRedisService = TelegramBot.Interfaces.IRedisService;
-using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.BotHandlers
 {
     public class CallbackQueryHandler : IBotHandler
     {
+        private readonly ErrorHandler _errorHandler;
+        private readonly MenuHandler _menuHandler;
         private readonly IBookingMessageService _bookingMessageService;
         private readonly IRedisService _redisService;
         private readonly IMediator _mediator;
@@ -29,12 +33,16 @@ namespace TelegramBot.BotHandlers
         public CallbackQueryHandler(IBookingMessageService bookingMessageService,
             IRedisService redisService, 
             IMediator mediator, 
-            IEnumerable<IOperationHandler> handlers)
+            IEnumerable<IOperationHandler> handlers,
+            MenuHandler menuHandler,
+            ErrorHandler errorHandler)
         {
             _bookingMessageService = bookingMessageService;
             _redisService = redisService;
             _mediator = mediator;
             _handlers = handlers;
+            _menuHandler = menuHandler;
+            _errorHandler = errorHandler;
         }
         public bool CanHandle(Update update) => update.CallbackQuery is not null;
         public async Task HandleAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -56,6 +64,8 @@ namespace TelegramBot.BotHandlers
             {
                 case "contact:add":
                     {
+                        currentSession.currentFlow = BotFlow.CreateUser;
+
                         bool userExists = await _mediator.Send(
                             new CheckClientByIdQuery(userId),
                             cancellationToken);
@@ -71,7 +81,6 @@ namespace TelegramBot.BotHandlers
                        
                         var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
                         var draft = await _redisService.GetDraftAsync<ShareContactDraft>(userId);
-                        currentSession.currentFlow = BotFlow.CreateUser;
 
                         if (process != null)
                         {
@@ -182,7 +191,8 @@ namespace TelegramBot.BotHandlers
                         ]);
 
                         break;
-                    }         
+                    }   
+                    
                 case "contact:confirm":
                     {
                         var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
@@ -247,6 +257,53 @@ namespace TelegramBot.BotHandlers
 
                         break;
                     }
+                case "menu":
+                    {
+                        await _menuHandler.DisplayMenu((long)chatId, true, botClient, currentSession, cancellationToken);
+                        break;
+                    }
+                case "my:profile":
+                    {
+                        var result = await _mediator.Send(new GetClientByIdQuery(userId), cancellationToken);
+
+                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
+                            return;
+
+                        await _menuHandler.DisplayProfileMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken);
+
+                        break;
+                    }
+                case "my:bookings":
+                    {
+                        var result = await _mediator.Send(new GetBookingsToUserQuery(userId, currentSession.currentBookingsPage, 5), cancellationToken);
+
+                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
+                            return;
+
+                        await _menuHandler.DisplayBookingsMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken);
+
+                        break;
+                    }
+                case "button:my:bookings:next_page":
+                    {
+                        var result = await _mediator.Send(new GetBookingsToUserQuery(userId, currentSession.currentBookingsPage, 5), cancellationToken);
+
+                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
+                            return;
+
+                        var totalPages = (int)Math.Ceiling(
+                            (double)result.Context!.TotalCount / result.Context!.PageSize);
+
+                        _menuHandler.NextBookingsPage(currentSession, totalPages);
+
+                        break;
+                    }
+
+                case "button:my:bookings:prev_page":
+                    {
+                        _menuHandler.PrevBookingsPage(currentSession);
+                        break;
+                    }
                 case "booking:add": 
                     {
                         var process = await _redisService
@@ -303,9 +360,11 @@ namespace TelegramBot.BotHandlers
 
                         newProcess.MessageWithServicesId = servicesMessage.Id;
 
-                        await Task.WhenAll(
+                        await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
-                            _redisService.SaveDraftAsync(userId, newDraft));
+                            _redisService.SaveDraftAsync(userId, newDraft),
+                            _redisService.SaveCurrentSession(userId, currentSession)
+                            ]);
 
                         break;
                     }

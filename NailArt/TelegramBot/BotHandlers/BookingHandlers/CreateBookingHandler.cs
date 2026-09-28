@@ -87,7 +87,8 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-            currentSession.currentFlow = BotFlow.Menu;
+
+            currentSession.currentFlow = BotFlow.ShowingBookings;
 
             await Task.WhenAll([
                 _redis.DeleteDraftAsync<CreateBookingDraft>(userId),

@@ -57,7 +57,7 @@ namespace TelegramBot.BotHandlers
 
             var session = await _redis.GetCurrentSession((long)userId);
 
-            if (currentSession == null)
+            if (session == null)
             {
                 await botClient.SendMessage(
                     chatId,

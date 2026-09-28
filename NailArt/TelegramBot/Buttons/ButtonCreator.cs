@@ -1,4 +1,5 @@
-﻿using Application.NailServices.DTO;
+﻿using Application.Bookings.DTO;
+using Application.NailServices.DTO;
 using Telegram.Bot.Types.ReplyMarkups;
 namespace TelegramBot.Buttons
 {
@@ -6,8 +7,91 @@ namespace TelegramBot.Buttons
     {
         public static InlineKeyboardButton Create(string buttonText, string callbackData)
             => InlineKeyboardButton.WithCallbackData(buttonText, callbackData);
+        public static InlineKeyboardMarkup MenuKeyboard()
+            => new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("👤Мой профиль", "my:profile")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📅 Мои записи", "my:bookings")
+                }
+            });
 
-        public static InlineKeyboardMarkup BookingServicePaginationKeyboard(IEnumerable<NailServiceResponse> services)
+        public static InlineKeyboardMarkup MyProfileKeyboard()
+            => new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("✏️ Изменить имя", "contact:edit_name")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📱 Изменить телефон", "contact:edit_phone")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("♻️ Удалить юзернейм", "contact:remove_userName")
+                },
+                new[]
+                {
+                      InlineKeyboardButton.WithCallbackData("🫆 Изменить юзернейм", "contact:edit_userName")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("В меню", "menu")
+                }
+            });
+
+        public static InlineKeyboardMarkup BookingToMenuKeyboard()
+            => new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("В меню", "menu")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("К записям", "my:bookings")
+                }
+            });
+
+        public static InlineKeyboardMarkup ClientToMenuKeyboard()
+            => new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("В меню", "menu")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Мой профиль", "my:profile")
+                }
+            });
+
+        public static InlineKeyboardMarkup MyBookings()
+              => new InlineKeyboardMarkup(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("✏️ Записаться", "booking:add")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("🗒️Мои записи", "my:bookings")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("❌ Отменить последнюю запись", "myBooking")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("В меню", "menu")
+                }
+            });
+        public static InlineKeyboardMarkup NailServicePaginationKeyboard(IEnumerable<NailServiceResponse> services)
         {
             List<InlineKeyboardButton[]> btns = new();
             foreach (var s in services)
@@ -17,6 +101,16 @@ namespace TelegramBot.Buttons
 
             btns.Add(new[] { ButtonBuilder.Create("<-", "button:choose_service:prev_page"), 
                 ButtonBuilder.Create("->", "button:choose_service:next_page") });
+
+            return new InlineKeyboardMarkup(btns.ToArray());
+        }
+
+        public static InlineKeyboardMarkup BookingsPaginationKeyboard()
+        {
+            List<InlineKeyboardButton[]> btns = new();
+
+            btns.Add(new[] { ButtonBuilder.Create("<-", "button:my:bookings:prev_page"),
+                ButtonBuilder.Create("->", "button:my:bookings:next_page") });
 
             return new InlineKeyboardMarkup(btns.ToArray());
         }
@@ -38,7 +132,7 @@ namespace TelegramBot.Buttons
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "contact:cancel")
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "menu")
                 }
             });
 
@@ -50,7 +144,7 @@ namespace TelegramBot.Buttons
                 },
                   new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "contact:cancel")
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "my:profile")
                 }
             });
 
@@ -70,7 +164,7 @@ namespace TelegramBot.Buttons
                     InlineKeyboardButton.WithCallbackData("🕐 Изменить время", "booking:edit_time") },
                 new[] 
                 {
-                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "booking:cancel")
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "my:bookings")
                 }
         });
     }

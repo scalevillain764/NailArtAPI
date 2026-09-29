@@ -62,6 +62,22 @@ namespace TelegramBot.BotHandlers
 
             switch (data)
             {
+                // profile/contacts
+                case "my:profile":
+                    {
+                        currentSession.currentFlow = BotFlow.ShowingProfile;
+                        var result = await _mediator.Send(new GetClientByIdQuery(userId), cancellationToken);
+
+                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
+                            return;
+
+                        await Task.WhenAll([
+                            _menuHandler.DisplayProfileMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken),
+                            _redisService.SaveCurrentSession(userId, currentSession)
+                           ]); 
+
+                        break;
+                    }
                 case "contact:add":
                     {
                         currentSession.currentFlow = BotFlow.CreateUser;
@@ -78,7 +94,7 @@ namespace TelegramBot.BotHandlers
 
                             return;
                         }
-                       
+
                         var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
                         var draft = await _redisService.GetDraftAsync<ShareContactDraft>(userId);
 
@@ -100,21 +116,21 @@ namespace TelegramBot.BotHandlers
 
                         var newProcess = new ContactProcess(ContactState.EnterName, null);
                         var newDraft = new ShareContactDraft(userId, null, null, callback.From.Username);
-                        
+
                         await Task.WhenAll([
                             _redisService.SaveProcessAsync(userId, newProcess),
                             _redisService.SaveDraftAsync(userId, newDraft),
                             _redisService.SaveCurrentSession(userId, currentSession),
                             botClient.SendMessage(chatId, "Пожалуйста, введите имя", cancellationToken: cancellationToken)
                             ]);
-          
+
                         break;
                     }
                 case "contact:edit_name":
                     {
                         bool userExists = await _mediator.Send(new CheckClientByIdQuery(userId), cancellationToken);
 
-                        if(!userExists)
+                        if (!userExists)
                         {
                             await botClient.SendMessage(chatId, $"Сначала создайте контакт", cancellationToken: cancellationToken);
                             return;
@@ -160,14 +176,14 @@ namespace TelegramBot.BotHandlers
                     {
                         var rez = await _mediator.Send(new EditClientUserNameCommand(userId, null), cancellationToken);
 
-                        if(!rez.IsSuccess)
+                        if (!rez.IsSuccess)
                         {
                             await botClient.SendMessage(chatId, rez.ErrorMessage!, cancellationToken: cancellationToken);
                             return;
                         }
 
                         await _redisService.DeleteProcessAsync<ContactProcess>(userId);
-                        break;            
+                        break;
                     }
                 case "contact:edit_userName":
                     {
@@ -191,19 +207,18 @@ namespace TelegramBot.BotHandlers
                         ]);
 
                         break;
-                    }   
-                    
+                    }
                 case "contact:confirm":
                     {
                         var process = await _redisService.GetProcessAsync<ContactProcess>(userId);
-                        if(process == null)
+                        if (process == null)
                         {
                             await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: cancellationToken);
                             return;
                         }
 
                         var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(currentSession.currentFlow));
-                        if(handler == null)
+                        if (handler == null)
                         {
                             await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: cancellationToken);
                             return;
@@ -211,7 +226,7 @@ namespace TelegramBot.BotHandlers
 
                         await handler.ConfirmAsync(userId, (long)chatId, process, botClient, currentSession, cancellationToken);
 
-                        break;                  
+                        break;
                     }
                 case "contact:create:edit_name":
                     {
@@ -232,7 +247,7 @@ namespace TelegramBot.BotHandlers
                               botClient.SendMessage(chatId, "Введите новое имя")
                             ]);
 
-                        break;                   
+                        break;
                     }
                 case "contact:create:edit_phone":
                     {
@@ -257,30 +272,55 @@ namespace TelegramBot.BotHandlers
 
                         break;
                     }
+                case "contact:create:cancel:menu":
+                    {
+                        await Task.WhenAll([
+                            _redisService.DeleteProcessAsync<ContactProcess>(userId),
+                            _redisService.DeleteDraftAsync<ShareContactDraft>(userId),
+                            _menuHandler.DisplayMenu((long)chatId, false, botClient, currentSession, cancellationToken)
+                            ]);
+                        break;
+                    }
                 case "menu":
                     {
+                        currentSession.currentFlow = BotFlow.Menu;
                         await _menuHandler.DisplayMenu((long)chatId, true, botClient, currentSession, cancellationToken);
                         break;
-                    }
-                case "my:profile":
-                    {
-                        var result = await _mediator.Send(new GetClientByIdQuery(userId), cancellationToken);
-
-                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
-                            return;
-
-                        await _menuHandler.DisplayProfileMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken);
-
-                        break;
-                    }
+                    }    
+                    
+                // bookings
                 case "my:bookings":
                     {
+                        currentSession.currentFlow = BotFlow.ShowingBookings;
                         var result = await _mediator.Send(new GetBookingsToUserQuery(userId, currentSession.currentBookingsPage, 5), cancellationToken);
 
                         if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
                             return;
 
-                        await _menuHandler.DisplayBookingsMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken);
+                        await Task.WhenAll([
+                            _menuHandler.DisplayBookingsMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken),
+                            _redisService.SaveCurrentSession(userId, currentSession)
+                        ]);
+
+                        break;
+                    }
+                case "booking:confirm":
+                    {
+                        var process = await _redisService.GetProcessAsync<BookingProcess>(userId);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: cancellationToken);
+                            return;
+                        }
+
+                        var handler = _handlers.FirstOrDefault(x => x.CanHandleAndConfirm(currentSession.currentFlow));
+                        if (handler == null)
+                        {
+                            await botClient.SendMessage(chatId, "Что-то пошло не так", cancellationToken: cancellationToken);
+                            return;
+                        }
+
+                        await handler.ConfirmAsync(userId, (long)chatId, process, botClient, currentSession, cancellationToken);
 
                         break;
                     }
@@ -298,13 +338,90 @@ namespace TelegramBot.BotHandlers
 
                         break;
                     }
+                case "booking:create:edit_service":
+                    {
+                        var process = await _redisService.GetProcessAsync<BookingProcess>(userId);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет", cancellationToken: cancellationToken);
+                            return;
+                        }
 
+                        currentSession.currentFlow = BotFlow.CreateBooking;
+                        process.EditType = EditBookingType.Service;
+                        process.State = BookingState.SelectService;
+
+                        var servicesMessage = await _bookingMessageService.SendServicesAsync(
+                            botClient, (long)chatId, process, cancellationToken);
+
+                        if (servicesMessage == null)
+                            return;
+
+                        process.MessageWithServicesId = servicesMessage.Id;
+
+                        await Task.WhenAll([
+                            _redisService.SaveProcessAsync(userId, process),
+                            _redisService.SaveCurrentSession(userId, currentSession)
+                            ]);
+
+                        break;
+                    }
+                case "booking:edit_time":
+                    {
+                        var process = await _redisService.GetProcessAsync<BookingProcess>(userId);
+                        if (process == null)
+                        {
+                            await botClient.SendMessage(chatId, $"Такого черновика нет", cancellationToken: cancellationToken);
+                            return;
+                        }
+
+                        currentSession.currentFlow = BotFlow.CreateBooking;
+                        process.EditType = EditBookingType.Year;
+                        process.State = BookingState.SelectYear;
+
+                        // send message wiuth years & buttons
+
+                        await Task.WhenAll([
+                            _redisService.SaveProcessAsync(userId, process),
+                            _redisService.SaveCurrentSession(userId, currentSession)
+                            ]);
+
+                        break;
+                    }
+                case "booking:create:cancel": 
+                    {
+                        var result = await _mediator.Send(new GetBookingsToUserQuery(userId, currentSession.currentBookingsPage, 5), cancellationToken);
+
+                        if (!await _errorHandler.HandleAsync(result, (long)chatId, botClient, cancellationToken))
+                            return;
+
+                        await Task.WhenAll([
+                            _redisService.DeleteProcessAsync<BookingProcess>(userId),
+                            _redisService.DeleteDraftAsync<CreateBookingDraft>(userId),
+                            _menuHandler.DisplayBookingsMenu((long)chatId, botClient, result.Context!, currentSession, cancellationToken)
+                           ]);
+
+                        break;
+                    }
+                case "my:bookings:cancel":
+                    {
+                        var result = await _mediator.Send(new CancelBookingCommand(userId), cancellationToken);
+                        string? text = null;
+
+                        if (!result.IsSuccess)
+                            text = result.ErrorMessage!;
+                        else
+                            text = "Вы успешно отменили запись";
+
+                        await botClient.SendMessage(chatId, text, replyMarkup: ButtonBuilder.BookingToMenuKeyboard(), cancellationToken: cancellationToken);
+                        break;
+                    }
                 case "button:my:bookings:prev_page":
                     {
                         _menuHandler.PrevBookingsPage(currentSession);
                         break;
                     }
-                case "booking:add": 
+                case "my:bookings:add": 
                     {
                         var process = await _redisService
                             .GetProcessAsync<BookingProcess>(userId);

@@ -87,14 +87,12 @@ namespace TelegramBot.BotHandlers
                 return;
             }
 
-
-            currentSession.currentFlow = BotFlow.ShowingBookings;
+            var keyboard = new InlineKeyboardMarkup(new[] { new[] { ButtonBuilder.Create("📅 Мои записи", "my:bookings")} });
 
             await Task.WhenAll([
                 _redis.DeleteDraftAsync<CreateBookingDraft>(userId),
                 _redis.DeleteProcessAsync<BookingProcess>(userId),
-                _redis.SaveCurrentSession(userId, currentSession),
-                botClient.SendMessage(chatId, "Вы успешно записались ✅", cancellationToken: token),
+                botClient.SendMessage(chatId, "Вы успешно записались ✅", replyMarkup: keyboard, cancellationToken: token),
             ]);
         }
 
@@ -237,6 +235,12 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
+                        if(year < DateTime.UtcNow.Year || year > DateTime.UtcNow.AddYears(1).Year)
+                        {
+                             await botClient.SendMessage(chatId, "Выберите корректный год");
+                             return;
+                        }
+
                         draft.Year = year;
 
                         process.State = BookingState.SelectMonth;
@@ -265,6 +269,12 @@ namespace TelegramBot.BotHandlers
                             return;
                         }
 
+                        if(month < 1 || month > 12)
+                        { 
+                            await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                            return;
+                        }
+
                         draft.Month = month;
 
                         process.State = BookingState.SelectDay;
@@ -289,7 +299,7 @@ namespace TelegramBot.BotHandlers
 
                         if (!int.TryParse(dayString, out var day))
                         {
-                            await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                            await botClient.SendMessage(chatId, "Выберите корректный день");
                             return;
                         }
 
@@ -329,20 +339,33 @@ namespace TelegramBot.BotHandlers
                         new GetFreeSlotsQuery(curDateTime, (Ulid)draft.ServiceId!)
                     );
 
+                    if(!allTimeAtCurrentDay.IsSuccess)
+                    {
+                        await botClient.SendMessage(chatId, allTimeAtCurrentDay.ErrorMessage!, cancellationToken: token);
+                        return;
+                    }
+
                     if (Data.StartsWith("time:"))
                     {
                         var timeString = Data["time:".Length..];
+
                         if (!TimeOnly.TryParse(timeString, out var time))
                         {
-                            await botClient.SendMessage(chatId, "Выберите корректное время");
+                            await botClient.SendMessage(chatId, "Выберите корректное время", cancellationToken: token);
                             return;
                         }
 
                         var newDateTime = curDateTime.AddHours(time.Hour).AddMinutes(time.Minute);
 
-                        if (newDateTime.Date < DateTime.UtcNow.Date)
+                        if (newDateTime < DateTime.UtcNow)
                         {
-                            await botClient.SendMessage(chatId, "Выберите корректный месяц");
+                            await botClient.SendMessage(chatId, "Выберите корректное время", cancellationToken: token);
+                            return;
+                        }
+
+                        if (!allTimeAtCurrentDay.Context!.Contains(time))
+                        {
+                            await botClient.SendMessage(chatId, "Такого времени нет", cancellationToken: token);
                             return;
                         }
 

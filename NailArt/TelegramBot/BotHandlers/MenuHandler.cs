@@ -74,7 +74,6 @@ namespace TelegramBot.BotHandlers
 
             await botClient.SendMessage(chatId, sb.ToString(), replyMarkup: paginationKeyboard, cancellationToken: cancellationToken);
         }
-
         public void PrevBookingsPage(BotSession session)
         {
             if (session.currentBookingsPage > 1)

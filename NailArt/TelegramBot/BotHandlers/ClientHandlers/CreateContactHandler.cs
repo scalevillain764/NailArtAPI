@@ -84,7 +84,7 @@ namespace TelegramBot.BotHandlers
 
                     await Task.WhenAll([
                         _redis.SaveProcessAsync(userId, process),
-                        _redis.SaveDraftAsync(userId, process),
+                        _redis.SaveDraftAsync(userId, draft),
                     ]);
 
                     break;

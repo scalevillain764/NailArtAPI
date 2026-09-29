@@ -76,21 +76,18 @@ namespace TelegramBot.Buttons
             {
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("✏️ Записаться", "booking:add")
+                    InlineKeyboardButton.WithCallbackData("✏️ Записаться", "my:bookings:add")
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("🗒️Мои записи", "my:bookings")
-                },
-                new[]
-                {
-                    InlineKeyboardButton.WithCallbackData("❌ Отменить последнюю запись", "myBooking")
+                    InlineKeyboardButton.WithCallbackData("❌ Отменить последнюю запись", "my:bookings:cancel")
                 },
                 new[]
                 {
                     InlineKeyboardButton.WithCallbackData("В меню", "menu")
                 }
             });
+        
         public static InlineKeyboardMarkup NailServicePaginationKeyboard(IEnumerable<NailServiceResponse> services)
         {
             List<InlineKeyboardButton[]> btns = new();
@@ -132,7 +129,7 @@ namespace TelegramBot.Buttons
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "menu")
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "contact:create:cancel:menu")
                 }
             });
 
@@ -157,14 +154,14 @@ namespace TelegramBot.Buttons
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("💅 Изменить услугу", "booking:edit_service")
+                    InlineKeyboardButton.WithCallbackData("💅 Изменить услугу", "booking:create:edit_service")
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("🕐 Изменить время", "booking:edit_time") },
+                    InlineKeyboardButton.WithCallbackData("🕐 Изменить время", "booking:create:edit_time") },
                 new[] 
                 {
-                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "my:bookings")
+                    InlineKeyboardButton.WithCallbackData("❌ Отмена", "booking:create:cancel")
                 }
         });
     }
